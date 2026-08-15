@@ -1,3 +1,12 @@
+export interface ItemCubso {
+  cod_cubso?: string | null
+  nom_cubso?: string | null
+  descripcion?: string | null
+  cantidad?: number | string | null
+  unidad?: string | null
+  distrito?: string | null
+}
+
 export interface Contrato {
   id: number
   nro_contratacion: string
@@ -13,6 +22,9 @@ export interface Contrato {
   cotizar: boolean | null
   categoria_it: string | null
   relevancia_ia: string | null
+  nom_area_usuaria?: string | null
+  items_json?: ItemCubso[] | null
+  detalle_cargado?: boolean | null
   rank?: number
 }
 
@@ -22,4 +34,12 @@ export interface DashboardResumen {
   categoria_it: string | null
   mes: string
   total: number
+}
+
+export interface ContratoRef {
+  id: number
+  nro: string
+  entidad: string
+  estado?: string
+  url: string
 }
