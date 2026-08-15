@@ -3,6 +3,7 @@ import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import Buscador from './pages/Buscador'
 import Chat from './pages/Chat'
+import Docs from './pages/Docs'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/buscar" element={<Buscador />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/docs" element={<Docs />} />
         </Routes>
       </div>
     </BrowserRouter>
