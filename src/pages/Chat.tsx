@@ -2,6 +2,19 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Contrato } from '../types'
 
+const AI_PROXY = 'https://seace-ai-proxy.rdiazg14.workers.dev'
+
+async function preguntarIA(query: string, contratos: Contrato[]): Promise<string> {
+  const res = await fetch(AI_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, contratos }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json() as { response: string }
+  return data.response
+}
+
 interface Message {
   role: 'user' | 'bot'
   text: string
@@ -50,7 +63,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'bot',
-      text: '¡Hola! Soy el asistente SEACE. Pregúntame sobre contratos de compras públicas del Estado peruano.\n\nEjemplos: "contratos de token vigentes", "servicios de ciberseguridad", "inteligencia artificial"',
+      text: '¡Hola! Soy el asistente SEACE con IA (Llama 3.1). Pregúntame sobre contratos públicos del Estado peruano — busco en 76,250 registros y analizo los resultados.\n\nEjemplos: "contratos de token vigentes", "ciberseguridad servicio", "inteligencia artificial"',
     },
   ])
   const [input, setInput] = useState('')
@@ -75,29 +88,35 @@ export default function Chat() {
       filtro_objeto,
       filtro_estado,
       filtro_entidad: null,
-      limite: 5,
+      limite: 6,
       offset_val: 0,
     })
 
     const contratos = (data as Contrato[]) ?? []
-    let respuesta = ''
 
     if (error) {
-      respuesta = 'Hubo un error al consultar la base de datos. Intenta de nuevo.'
-    } else if (contratos.length === 0) {
-      respuesta = `No encontré contratos para "${userMsg}". Prueba con otros términos como "oracle", "microsoft", "ciberseguridad" o "token".`
-    } else {
-      const partesFiltro = [
-        filtro_estado ? `estado: **${filtro_estado}**` : '',
-        filtro_objeto ? `tipo: **${filtro_objeto}**` : '',
-      ].filter(Boolean).join(', ')
-
-      respuesta = `Encontré **${contratos.length}** contrato${contratos.length !== 1 ? 's' : ''} ${
-        partesFiltro ? `(${partesFiltro}) ` : ''
-      }para "${termino || userMsg}":`
+      setMessages(prev => [...prev, { role: 'bot', text: 'Hubo un error al consultar la base de datos. Intenta de nuevo.' }])
+      setLoading(false)
+      return
     }
 
-    setMessages(prev => [...prev, { role: 'bot', text: respuesta, contratos: contratos.length > 0 ? contratos : undefined }])
+    // Intentar respuesta con IA; fallback a texto simple si falla
+    let respuesta = ''
+    try {
+      respuesta = await preguntarIA(userMsg, contratos)
+    } catch {
+      if (contratos.length === 0) {
+        respuesta = `No encontré contratos para "${userMsg}". Prueba con: "oracle", "microsoft", "ciberseguridad" o "token".`
+      } else {
+        const n = contratos.length
+        respuesta = `Encontré ${n} contrato${n !== 1 ? 's' : ''} para "${termino || userMsg}".`
+      }
+    }
+
+    setMessages(prev => [
+      ...prev,
+      { role: 'bot', text: respuesta, contratos: contratos.length > 0 ? contratos : undefined },
+    ])
     setLoading(false)
   }
 
