@@ -63,7 +63,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'bot',
-      text: '¡Hola! Soy el asistente SEACE con IA (Llama 3.1). Pregúntame sobre contratos públicos del Estado peruano — busco en 76,250 registros y analizo los resultados.\n\nEjemplos: "contratos de token vigentes", "ciberseguridad servicio", "inteligencia artificial"',
+      text: '¡Hola! Soy el asistente SEACE con IA (Llama 3.3 70B). Pregúntame sobre contratos públicos del Estado peruano — busco en 76,250 registros y analizo los resultados.\n\nEjemplos: "contratos de token vigentes", "ciberseguridad servicio", "inteligencia artificial"',
     },
   ])
   const [input, setInput] = useState('')
