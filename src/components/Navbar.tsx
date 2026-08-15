@@ -19,6 +19,7 @@ export default function Navbar() {
           <NavLink to="/" end className={linkCls}>Dashboard</NavLink>
           <NavLink to="/buscar" className={linkCls}>Buscador</NavLink>
           <NavLink to="/chat" className={linkCls}>Chat</NavLink>
+          <NavLink to="/docs" className={linkCls}>API</NavLink>
         </div>
       </div>
     </nav>
