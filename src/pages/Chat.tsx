@@ -1,203 +1,182 @@
-import { useState, useRef, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import type { Contrato } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { AI_PROXY, supabase } from '../lib/supabase'
+import type { Contrato, ContratoRef } from '../types'
+import ContratoCard from '../components/ContratoCard'
+import { Skeleton } from '../components/ui'
 
-const AI_PROXY = 'https://seace-ai-proxy.rdiazg14.workers.dev'
+const SUGERENCIAS = [
+  'Contratos de ciberseguridad vigentes',
+  'Equipos de cómputo con specs',
+  'Qué compra el Ministerio de Trabajo',
+  'Cloud o servicios en la nube',
+]
 
-async function preguntarIA(query: string, contratos: Contrato[]): Promise<string> {
-  const res = await fetch(AI_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, contratos }),
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data = await res.json() as { response: string }
-  return data.response
-}
-
-interface Message {
+interface Msg {
   role: 'user' | 'bot'
   text: string
   contratos?: Contrato[]
+  error?: boolean
 }
 
-function fmtFecha(s: string | null) {
-  if (!s) return ''
-  return new Date(s).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
+type Stage = 'idle' | 'search' | 'ai' | 'slow'
+
+function RichText({ text }: { text: string }) {
+  const lines = text.split('\n')
+  return (
+    <div className="space-y-1.5 text-sm leading-relaxed">
+      {lines.map((line, i) => {
+        const parts = line.split(/(\*\*[^*]+\*\*)/g)
+        const nodes = parts.map((p, j) =>
+          p.startsWith('**') && p.endsWith('**')
+            ? <strong key={j} className="font-medium">{p.slice(2, -2)}</strong>
+            : <span key={j}>{p}</span>,
+        )
+        const t = line.trim()
+        if (t.startsWith('- ') || t.startsWith('* ') || /^\d+\.\s/.test(t)) {
+          return <div key={i} className="flex gap-2 pl-1"><span className="text-teal-500">•</span><span>{nodes}</span></div>
+        }
+        return <p key={i}>{nodes}</p>
+      })}
+    </div>
+  )
 }
-
-function parsearConsulta(input: string) {
-  const lower = input.toLowerCase()
-
-  let filtro_estado: string | null = null
-  if (/vigent/.test(lower)) filtro_estado = 'Vigente'
-  else if (/culminad|cerrad/.test(lower)) filtro_estado = 'Culminado'
-  else if (/evaluaci/.test(lower)) filtro_estado = 'En Evaluación'
-
-  let filtro_objeto: string | null = null
-  if (/\bservicio/.test(lower)) filtro_objeto = 'Servicio'
-  else if (/\bbien\b/.test(lower)) filtro_objeto = 'Bien'
-  else if (/consultor/.test(lower)) filtro_objeto = 'Consultoría de Obra'
-  else if (/\bobra\b/.test(lower)) filtro_objeto = 'Obra'
-
-  const termino = input
-    .replace(/vigentes?|culminad[oa]s?|servicios?|bienes?/gi, '')
-    .replace(/busca(r)?|muéstrame|muéstrame|muestra(me)?|lista(r)?|encuentra|dame|dime|hay|cuáles?/gi, '')
-    .replace(/contratos?|contrataciones?/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  return { termino, filtro_objeto, filtro_estado }
-}
-
-const SUGERENCIAS = [
-  'contratos de token vigentes',
-  'ciberseguridad servicio',
-  'inteligencia artificial vigente',
-  'oracle base de datos',
-  'microsoft 365',
-  'desarrollo de software vigente',
-]
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'bot',
-      text: '¡Hola! Soy el asistente SEACE con IA (Llama 3.3 70B). Pregúntame sobre contratos públicos del Estado peruano — busco en 76,250 registros y analizo los resultados.\n\nEjemplos: "contratos de token vigentes", "ciberseguridad servicio", "inteligencia artificial"',
-    },
-  ])
+  const navigate = useNavigate()
+  const [messages, setMessages] = useState<Msg[]>([{
+    role: 'bot',
+    text: 'Soy el asistente SEACE con IA. Busco en los Términos de Referencia reales de 2,330 contratos vigentes. Pregúntame sobre requisitos técnicos, especificaciones, plazos o cualquier detalle.',
+  }])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [stage, setStage] = useState<Stage>('idle')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, loading])
 
-  async function enviar(texto = input) {
-    if (!texto.trim() || loading) return
-    const userMsg = texto.trim()
-    setInput('')
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }])
-    setLoading(true)
-
-    const { termino, filtro_objeto, filtro_estado } = parsearConsulta(userMsg)
-
-    const { data, error } = await supabase.rpc('buscar_contratos', {
-      termino: termino || '',
-      filtro_objeto,
-      filtro_estado,
-      filtro_entidad: null,
-      limite: 6,
-      offset_val: 0,
-    })
-
-    const contratos = (data as Contrato[]) ?? []
-
-    if (error) {
-      setMessages(prev => [...prev, { role: 'bot', text: 'Hubo un error al consultar la base de datos. Intenta de nuevo.' }])
-      setLoading(false)
+  useEffect(() => {
+    if (!loading) {
+      setStage('idle')
       return
     }
-
-    // Intentar respuesta con IA; fallback a texto simple si falla
-    let respuesta = ''
-    try {
-      respuesta = await preguntarIA(userMsg, contratos)
-    } catch {
-      if (contratos.length === 0) {
-        respuesta = `No encontré contratos para "${userMsg}". Prueba con: "oracle", "microsoft", "ciberseguridad" o "token".`
-      } else {
-        const n = contratos.length
-        respuesta = `Encontré ${n} contrato${n !== 1 ? 's' : ''} para "${termino || userMsg}".`
-      }
+    setStage('search')
+    const a = window.setTimeout(() => setStage('ai'), 3000)
+    const b = window.setTimeout(() => setStage('slow'), 20000)
+    return () => {
+      window.clearTimeout(a)
+      window.clearTimeout(b)
     }
+  }, [loading])
 
-    setMessages(prev => [
-      ...prev,
-      { role: 'bot', text: respuesta, contratos: contratos.length > 0 ? contratos : undefined },
-    ])
-    setLoading(false)
+  async function enviar(texto = input) {
+    const q = texto.trim()
+    if (!q || loading) return
+    setInput('')
+    setMessages(m => [...m, { role: 'user', text: q }])
+    setLoading(true)
+    try {
+      const res = await fetch(AI_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json() as {
+        respuesta?: string
+        response?: string
+        contratos_referenciados?: ContratoRef[]
+        error?: string
+      }
+      const refs = data.contratos_referenciados ?? []
+      let contratos: Contrato[] = []
+      if (refs.length) {
+        const ids = refs.map(r => r.id)
+        const { data: rows } = await supabase.from('contratos').select('*').in('id', ids)
+        const byId = new Map((rows as Contrato[] ?? []).map(c => [c.id, c]))
+        contratos = ids.map(id => byId.get(id)).filter((c): c is Contrato => Boolean(c))
+      }
+      const text = data.respuesta || data.response || 'No pude generar una respuesta.'
+      setMessages(m => [...m, { role: 'bot', text, contratos, error: Boolean(data.error) }])
+    } catch {
+      setMessages(m => [...m, {
+        role: 'bot',
+        error: true,
+        text: 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador para filtrar por texto.',
+      }])
+    } finally {
+      setLoading(false)
+    }
   }
 
-  return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 flex flex-col" style={{ height: 'calc(100vh - 3.5rem)' }}>
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-100">Chat SEACE</h1>
-        <p className="text-slate-400 text-sm">Consulta en lenguaje natural · búsqueda rule-based</p>
-      </div>
+  const stageLabel =
+    stage === 'search' ? 'Buscando en 9,074 fragmentos…'
+      : stage === 'ai' ? 'Analizando con IA…'
+        : stage === 'slow' ? 'Tomando más tiempo del usual…'
+          : ''
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
+  return (
+    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] max-w-[800px] flex-col px-3 sm:px-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-4">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] ${m.role === 'user' ? 'order-2' : ''}`}>
-              {m.role === 'bot' && (
-                <span className="text-xs text-emerald-400 font-medium mb-1 block">SEACE Bot</span>
-              )}
-              <div className={`rounded-xl px-4 py-2.5 text-sm ${
+            <div className={`max-w-[92%] sm:max-w-[85%] ${m.role === 'user' ? '' : 'w-full'}`}>
+              {m.role === 'bot' && <p className="mb-1 text-[11px] font-medium text-teal-600 dark:text-teal-400">SEACE Bot</p>}
+              <div className={`rounded-2xl px-3.5 py-2.5 ${
                 m.role === 'user'
-                  ? 'bg-emerald-600 text-white rounded-br-sm'
-                  : 'bg-slate-800 border border-slate-700 text-slate-200 rounded-bl-sm'
-              }`}>
-                {m.text.split('\n').map((line, j) => (
-                  <span key={j}>
-                    {line.replace(/\*\*(.*?)\*\*/g, '$1')}
-                    {j < m.text.split('\n').length - 1 && <br />}
-                  </span>
-                ))}
+                  ? 'rounded-br-sm bg-teal-500 text-white'
+                  : m.error
+                    ? 'rounded-bl-sm border border-red-500/30 bg-red-500/10'
+                    : 'rounded-bl-sm border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+              }`}
+              >
+                {m.role === 'bot' ? <RichText text={m.text} /> : <p className="text-sm">{m.text}</p>}
               </div>
-
               {m.contratos && m.contratos.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {m.contratos.map(c => (
-                    <div key={c.id} className="bg-slate-800/80 border border-slate-700 rounded-lg p-3 text-xs">
-                      <div className="flex flex-wrap gap-1 mb-1.5">
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                          c.estado === 'Vigente' ? 'bg-emerald-500/20 text-emerald-400' :
-                          c.estado === 'En Evaluación' ? 'bg-amber-500/20 text-amber-400' :
-                          'bg-slate-600 text-slate-300'
-                        }`}>{c.estado}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{c.objeto}</span>
-                        {c.relevancia_ia && (
-                          <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">IA {c.relevancia_ia}</span>
-                        )}
-                      </div>
-                      <p className="text-slate-200 font-medium line-clamp-2 mb-1">{c.descripcion}</p>
-                      <p className="text-slate-400">{c.entidad}</p>
-                      {c.fecha_fin_cotizacion && (
-                        <p className="text-slate-500 mt-1">Cierre: {fmtFecha(c.fecha_fin_cotizacion)}</p>
-                      )}
-                    </div>
+                    <ContratoCard
+                      key={c.id}
+                      c={c}
+                      compact
+                      onSimilares={() => navigate(`/buscar?q=${encodeURIComponent((c.categoria_it || c.descripcion || '').slice(0, 80))}`)}
+                    />
                   ))}
                 </div>
+              )}
+              {m.role === 'bot' && m.error && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/buscar')}
+                  className="mt-2 text-xs font-medium text-teal-600 dark:text-teal-400"
+                >
+                  Ir al buscador
+                </button>
               )}
             </div>
           </div>
         ))}
 
         {loading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
-              <div className="flex gap-1.5">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
+          <div className="space-y-2">
+            <p className="text-xs text-teal-600 dark:text-teal-400">{stageLabel}</p>
+            <Skeleton className="h-20 w-4/5" />
+            <Skeleton className="h-24 w-full" />
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Sugerencias */}
-      {messages.length === 1 && (
-        <div className="flex flex-wrap gap-2 mb-3">
+      {messages.length === 1 && !loading && (
+        <div className="flex flex-wrap gap-2 pb-3">
           {SUGERENCIAS.map(s => (
             <button
               key={s}
-              onClick={() => enviar(s)}
-              className="text-xs px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 text-slate-300 hover:text-emerald-400 rounded-full transition-colors"
+              type="button"
+              onClick={() => void enviar(s)}
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
             >
               {s}
             </button>
@@ -205,20 +184,21 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Input */}
-      <form onSubmit={e => { e.preventDefault(); enviar() }} className="flex gap-2">
+      <form
+        className="flex gap-2 pb-4 pt-1"
+        onSubmit={e => { e.preventDefault(); void enviar() }}
+      >
         <input
-          type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="Escribe tu consulta sobre contratos SEACE…"
           disabled={loading}
-          className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+          placeholder="Pregunta sobre TDR, specs, plazos…"
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-teal-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
         />
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded-xl transition-colors"
+          className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
         >
           Enviar
         </button>

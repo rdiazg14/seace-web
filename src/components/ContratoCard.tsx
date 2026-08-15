@@ -1,63 +1,112 @@
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Contrato } from '../types'
+import { cierraEn, fmtFecha, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
+import { CierraPill, EstadoPill, IaPill, ItPill, ObjetoPill } from './Pills'
 
-const ESTADO_STYLE: Record<string, string> = {
-  'Vigente': 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
-  'En Evaluación': 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
-  'Culminado': 'bg-slate-500/20 text-slate-400 border border-slate-500/30',
-}
+export default function ContratoCard({
+  c,
+  compact = false,
+  onSimilares,
+}: {
+  c: Contrato
+  compact?: boolean
+  onSimilares?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [more, setMore] = useState(false)
+  const items = itemsDe(c)
+  const cierre = cierraEn(c.fecha_fin_cotizacion)
+  const titulo = tituloContrato(c)
 
-const IA_STYLE: Record<string, string> = {
-  'ALTA': 'bg-red-500/20 text-red-400',
-  'MEDIA': 'bg-amber-500/20 text-amber-400',
-  'BAJA': 'bg-blue-500/20 text-blue-400',
-}
-
-function fmtFecha(s: string | null) {
-  if (!s) return '—'
-  return new Date(s).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-export default function ContratoCard({ c }: { c: Contrato }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:border-slate-600 transition-colors">
-      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-        <div className="flex flex-wrap gap-1.5">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_STYLE[c.estado] ?? 'bg-slate-700 text-slate-300'}`}>
-            {c.estado}
-          </span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
-            {c.objeto}
-          </span>
-          {c.relevancia_ia && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${IA_STYLE[c.relevancia_ia]}`}>
-              IA {c.relevancia_ia}
-            </span>
-          )}
-          {c.categoria_it && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400">
-              {c.categoria_it}
-            </span>
+    <article className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:scale-[1.01] hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap gap-1">
+          <EstadoPill estado={c.estado} />
+          <ObjetoPill objeto={c.objeto} />
+          {c.categoria_it && <ItPill cat={c.categoria_it} />}
+          {c.relevancia_ia && <IaPill nivel={c.relevancia_ia} />}
+          {c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
+            <CierraPill label={cierre.label} tone={cierre.tone} />
           )}
         </div>
-        <span className="text-xs text-slate-500 font-mono">{c.descripcion_contrato}</span>
+        <span className="shrink-0 font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
       </div>
 
-      <p className="text-slate-100 text-sm font-medium leading-snug mb-1 line-clamp-2">
-        {c.descripcion}
+      <p className={`text-sm font-medium leading-snug text-slate-900 dark:text-slate-100 ${more ? '' : 'line-clamp-2'}`}>
+        {titulo}
       </p>
-      <p className="text-slate-400 text-xs mb-3">{c.entidad}</p>
+      {titulo.length > 90 && (
+        <button type="button" onClick={() => setMore(m => !m)} className="mt-0.5 text-[11px] text-teal-600 dark:text-teal-400">
+          {more ? 'Ver menos' : 'Ver más'}
+        </button>
+      )}
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{c.entidad}</p>
+      {c.nom_area_usuaria && (
+        <p className="mt-0.5 text-[11px] text-slate-400">Área: {c.nom_area_usuaria}</p>
+      )}
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-        {c.fecha_publica && (
-          <span>Publicado: <span className="text-slate-400">{fmtFecha(c.fecha_publica)}</span></span>
+      {!compact && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+          {c.fecha_publica && <span>Pub. {fmtFecha(c.fecha_publica)}</span>}
+          {c.fecha_fin_cotizacion && <span>Cierre {fmtFecha(c.fecha_fin_cotizacion)}</span>}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            className="text-[11px] font-medium text-teal-600 dark:text-teal-400"
+          >
+            {open ? 'Ocultar' : 'Ver'} {items.length} ítem{items.length === 1 ? '' : 's'} CUBSO
+          </button>
+          {open && (
+            <ul className="mt-1.5 space-y-1.5">
+              {items.map((it, i) => (
+                <li key={i} className="rounded-lg bg-slate-50 p-2 text-[11px] dark:bg-slate-800/70">
+                  <p className="font-medium text-slate-700 dark:text-slate-200">
+                    {it.nom_cubso || 'Ítem'} {it.cantidad != null && `· ${it.cantidad} ${it.unidad || ''}`}
+                  </p>
+                  {it.cod_cubso && <p className="font-mono text-slate-400">{it.cod_cubso}</p>}
+                  {it.descripcion && <p className="mt-0.5 text-slate-500">{it.descripcion}</p>}
+                  {it.distrito && <p className="text-slate-400">{it.distrito}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href={seaceUrl(c.id)}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-lg bg-teal-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-400"
+        >
+          Ver en SEACE
+        </a>
+        {onSimilares && (
+          <button
+            type="button"
+            onClick={onSimilares}
+            className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+          >
+            Buscar similares
+          </button>
         )}
-        {c.fecha_fin_cotizacion && (
-          <span>Cierre: <span className="text-slate-400">{fmtFecha(c.fecha_fin_cotizacion)}</span></span>
-        )}
-        {c.tipo_cotizacion && (
-          <span>Tipo: <span className="text-slate-400">{c.tipo_cotizacion}</span></span>
+        {!onSimilares && (
+          <Link
+            to={`/buscar?q=${encodeURIComponent((c.categoria_it || titulo).slice(0, 60))}`}
+            className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+          >
+            Buscar similares
+          </Link>
         )}
       </div>
-    </div>
+    </article>
   )
 }
