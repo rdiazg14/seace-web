@@ -161,7 +161,15 @@ export default function Chat() {
         body: JSON.stringify({ query: q }),
         signal: ac.signal,
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        let msg = `No pude consultar la IA ahora (HTTP ${res.status}).`
+        try {
+          const data = await res.json() as { respuesta?: string; response?: string; error?: string }
+          msg = data.respuesta || data.response || data.error || msg
+        } catch { /* cuerpo no JSON */ }
+        patchLast({ text: msg, error: true, stage: undefined, query: q })
+        return
+      }
       const ct = res.headers.get('content-type') || ''
       if (ct.includes('text/event-stream') && res.body) {
         await consumeSse(res, q)
