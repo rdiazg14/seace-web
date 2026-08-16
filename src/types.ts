@@ -43,3 +43,13 @@ export interface ContratoRef {
   estado?: string
   url: string
 }
+
+export type Rol = 'admin' | 'normal'
+
+export interface Perfil {
+  id: string
+  email: string
+  rol: Rol
+  creado_por: string | null
+  created_at: string
+}
