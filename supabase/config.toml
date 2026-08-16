@@ -1,0 +1,7 @@
+project_id = "wusywwhcyqngnpvpzxyr"
+
+[functions.crear-usuario]
+verify_jwt = true
+
+[functions.desactivar-usuario]
+verify_jwt = true

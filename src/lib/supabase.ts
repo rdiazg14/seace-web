@@ -6,4 +6,10 @@ export const SUPABASE_ANON_KEY =
 
 export const AI_PROXY = 'https://seace-ai-proxy.rdiazg14.workers.dev'
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+})
