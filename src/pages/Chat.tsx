@@ -69,6 +69,11 @@ function CitaFuente({
         <p className="truncate text-xs text-slate-600 dark:text-slate-300">{cita.entidad || 'Entidad no indicada'}</p>
       </div>
       {cita.estado && <EstadoPill estado={cita.estado} />}
+      {cita.fuente === 'pdf' && (
+        <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
+          incluye TDR
+        </span>
+      )}
       <a
         href={cita.url}
         target="_blank"
