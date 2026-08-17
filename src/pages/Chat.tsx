@@ -2,20 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AI_PROXY, supabase } from '../lib/supabase'
 import type { Contrato, ContratoRef } from '../types'
-import ContratoCard from '../components/ContratoCard'
+import { EstadoPill } from '../components/Pills'
 
 const SUGERENCIAS = [
-  'Contratos de ciberseguridad vigentes',
-  'Equipos de cómputo con specs',
-  'Qué compra el Ministerio de Trabajo',
-  'Cloud o servicios en la nube',
+  'ciberseguridad',
+  'servicios contables',
+  'equipos de cómputo',
+  'cloud o servicios en la nube',
 ]
 
 interface Msg {
   role: 'user' | 'bot'
   text: string
+  refs?: ContratoRef[]
   contratos?: Contrato[]
   error?: boolean
+  limit?: boolean
   stage?: string
   query?: string
 }
@@ -41,6 +43,53 @@ function RichText({ text }: { text: string }) {
   )
 }
 
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1" aria-hidden>
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:-0.3s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500 [animation-delay:-0.15s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500" />
+    </span>
+  )
+}
+
+function CitaFuente({
+  cita,
+  contrato,
+  onSimilares,
+}: {
+  cita: ContratoRef
+  contrato?: Contrato
+  onSimilares?: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[11px] font-medium text-teal-700 dark:text-teal-400">{cita.nro}</p>
+        <p className="truncate text-xs text-slate-600 dark:text-slate-300">{cita.entidad || 'Entidad no indicada'}</p>
+      </div>
+      {cita.estado && <EstadoPill estado={cita.estado} />}
+      <a
+        href={cita.url}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 rounded-lg bg-teal-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-400"
+      >
+        Ver en SEACE
+      </a>
+      {onSimilares && contrato && (
+        <button
+          type="button"
+          onClick={onSimilares}
+          className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+        >
+          Similares
+        </button>
+      )}
+    </div>
+  )
+}
+
 async function loadContratos(refs: ContratoRef[]): Promise<Contrato[]> {
   if (!refs.length) return []
   const ids = refs.map(r => r.id)
@@ -59,6 +108,21 @@ function parseSseBlock(block: string): unknown | null {
   } catch {
     return null
   }
+}
+
+function mensajeLimite(status: number, data: { respuesta?: string; response?: string; error?: string }): string {
+  const fromWorker = data.respuesta || data.response
+  if (fromWorker) return fromWorker
+  if (status === 429 || data.error === 'rate_limited') {
+    return 'Has hecho demasiadas consultas. Espera un minuto e intenta de nuevo.'
+  }
+  if (data.error === 'daily_limited') {
+    return 'Llegaste al límite diario de consultas desde esta red. Intenta mañana.'
+  }
+  if (status === 503 || data.error === 'over_capacity') {
+    return 'Hay alta demanda en el asistente. Intenta más tarde.'
+  }
+  return 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.'
 }
 
 export default function Chat() {
@@ -92,9 +156,11 @@ export default function Chat() {
       contratos_referenciados?: ContratoRef[]
       error?: string
     }
-    const contratos = await loadContratos(data.contratos_referenciados ?? [])
+    const refs = data.contratos_referenciados ?? []
+    const contratos = await loadContratos(refs)
     patchLast({
       text: data.respuesta || data.response || 'No pude generar una respuesta.',
+      refs,
       contratos,
       error: Boolean(data.error),
       stage: undefined,
@@ -123,14 +189,22 @@ export default function Chat() {
           contratos_referenciados?: ContratoRef[]
         } | null
         if (!ev) continue
-        if (ev.stage === 'searching' || ev.stage === 'found') {
-          patchLast({ stage: ev.message || ev.stage, query })
+        if (ev.stage === 'searching') {
+          patchLast({ stage: ev.message || 'Buscando en los TDR…', query })
+        } else if (ev.stage === 'found') {
+          patchLast({
+            stage: ev.message || (ev.chunks != null
+              ? `Encontré ${ev.chunks} fragmentos relevantes`
+              : 'Encontré fragmentos relevantes'),
+            query,
+          })
         } else if (ev.stage === 'streaming' && ev.token) {
           text += ev.token
-          patchLast({ text, stage: 'Generando…', query })
+          patchLast({ text, stage: 'Redactando la respuesta…', query })
         } else if (ev.stage === 'done') {
-          const contratos = await loadContratos(ev.contratos_referenciados ?? [])
-          patchLast({ text, contratos, stage: undefined, query })
+          const refs = ev.contratos_referenciados ?? []
+          const contratos = await loadContratos(refs)
+          patchLast({ text, refs, contratos, stage: undefined, query })
         } else if (ev.stage === 'error') {
           throw new Error(ev.message || 'error SSE')
         }
@@ -148,7 +222,7 @@ export default function Chat() {
     setMessages(m => [
       ...m,
       { role: 'user', text: q },
-      { role: 'bot', text: '', stage: 'Buscando en 9,074 fragmentos…', query: q },
+      { role: 'bot', text: '', stage: 'Buscando en los TDR…', query: q },
     ])
     setLoading(true)
     try {
@@ -162,12 +236,21 @@ export default function Chat() {
         signal: ac.signal,
       })
       if (!res.ok) {
-        let msg = `No pude consultar la IA ahora (HTTP ${res.status}).`
+        let data: { respuesta?: string; response?: string; error?: string } = {}
         try {
-          const data = await res.json() as { respuesta?: string; response?: string; error?: string }
-          msg = data.respuesta || data.response || data.error || msg
+          data = await res.json() as { respuesta?: string; response?: string; error?: string }
         } catch { /* cuerpo no JSON */ }
-        patchLast({ text: msg, error: true, stage: undefined, query: q })
+        const isLimit = res.status === 429 || res.status === 503
+          || data.error === 'rate_limited'
+          || data.error === 'daily_limited'
+          || data.error === 'over_capacity'
+        patchLast({
+          text: mensajeLimite(res.status, data),
+          error: !isLimit,
+          limit: isLimit,
+          stage: undefined,
+          query: q,
+        })
         return
       }
       const ct = res.headers.get('content-type') || ''
@@ -199,6 +282,8 @@ export default function Chat() {
 
   const last = messages[messages.length - 1]
   const streaming = loading && last?.role === 'bot'
+  const showWelcomeChips = messages.length === 1 && !loading
+  const showInlineChips = messages.length > 1 && !loading
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-3.5rem)] max-w-[800px] flex-col px-3 sm:px-4">
@@ -210,31 +295,46 @@ export default function Chat() {
               <div className={`rounded-2xl px-3.5 py-2.5 ${
                 m.role === 'user'
                   ? 'rounded-br-sm bg-teal-500 text-white'
-                  : m.error
-                    ? 'rounded-bl-sm border border-red-500/30 bg-red-500/10'
-                    : 'rounded-bl-sm border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                  : m.limit
+                    ? 'rounded-bl-sm border border-amber-500/40 bg-amber-500/10'
+                    : m.error
+                      ? 'rounded-bl-sm border border-red-500/30 bg-red-500/10'
+                      : 'rounded-bl-sm border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
               }`}
               >
                 {m.role === 'bot' && m.stage && (
-                  <p className="mb-1.5 text-xs text-teal-600 dark:text-teal-400">{m.stage}</p>
+                  <p className="mb-1.5 flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400">
+                    <TypingDots />
+                    <span>{m.stage}</span>
+                  </p>
                 )}
                 {m.role === 'bot'
-                  ? (m.text ? <RichText text={m.text} /> : streaming && i === messages.length - 1 ? <span className="inline-block h-3 w-1.5 animate-pulse bg-teal-500" /> : null)
+                  ? (m.text
+                    ? <RichText text={m.text} />
+                    : streaming && i === messages.length - 1
+                      ? <p className="text-xs text-slate-500">Esto puede tardar unos 10 segundos…</p>
+                      : null)
                   : <p className="text-sm">{m.text}</p>}
               </div>
-              {m.contratos && m.contratos.length > 0 && (
-                <div className="mt-2 space-y-2">
-                  {m.contratos.map(c => (
-                    <ContratoCard
-                      key={c.id}
-                      c={c}
-                      compact
-                      onSimilares={() => navigate(`/buscar?q=${encodeURIComponent((c.categoria_it || c.descripcion || '').slice(0, 80))}`)}
-                    />
-                  ))}
+              {m.refs && m.refs.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-[11px] font-medium text-slate-500">Contratos citados</p>
+                  {m.refs.map(cita => {
+                    const contrato = m.contratos?.find(c => c.id === cita.id)
+                    return (
+                      <CitaFuente
+                        key={cita.id}
+                        cita={cita}
+                        contrato={contrato}
+                        onSimilares={contrato
+                          ? () => navigate(`/buscar?q=${encodeURIComponent((contrato.categoria_it || contrato.descripcion || '').slice(0, 80))}`)
+                          : undefined}
+                      />
+                    )
+                  })}
                 </div>
               )}
-              {m.role === 'bot' && m.error && (
+              {m.role === 'bot' && (m.error || m.limit) && (
                 <div className="mt-2 flex gap-3">
                   {m.query && (
                     <button
@@ -260,8 +360,11 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
-      {messages.length === 1 && !loading && (
-        <div className="flex flex-wrap gap-2 pb-3">
+      {(showWelcomeChips || showInlineChips) && (
+        <div className="flex flex-wrap items-center gap-2 pb-3">
+          {showInlineChips && (
+            <span className="text-[11px] text-slate-400">Ejemplos</span>
+          )}
           {SUGERENCIAS.map(s => (
             <button
               key={s}
