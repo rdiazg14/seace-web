@@ -42,6 +42,7 @@ export interface ContratoRef {
   entidad: string
   estado?: string
   url: string
+  fuente?: 'pdf' | 'api'
 }
 
 export type Rol = 'admin' | 'normal'
