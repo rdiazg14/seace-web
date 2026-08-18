@@ -9,6 +9,7 @@ import Chat from './pages/Chat'
 import Docs from './pages/Docs'
 import Login from './pages/Login'
 import Usuarios from './pages/Usuarios'
+import RutaDia from './pages/RutaDia'
 
 function Shell() {
   const { pathname } = useLocation()
@@ -19,6 +20,7 @@ function Shell() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+        <Route path="/ruta-dia" element={<RequireAuth><RutaDia /></RequireAuth>} />
         <Route path="/buscar" element={<RequireAuth><Buscador /></RequireAuth>} />
         <Route path="/chat" element={<RequireAuth><Chat /></RequireAuth>} />
         <Route path="/docs" element={<RequireAuth><Docs /></RequireAuth>} />

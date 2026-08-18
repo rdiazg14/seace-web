@@ -4,6 +4,7 @@ import { useTheme } from '../lib/theme'
 import { useAuth } from '../lib/auth'
 
 const LINKS = [
+  { to: '/ruta-dia', label: 'Ruta del día', end: false },
   { to: '/', label: 'Dashboard', end: true },
   { to: '/buscar', label: 'Buscador', end: false },
   { to: '/chat', label: 'Chat', end: false },
