@@ -48,9 +48,10 @@ export default function AnalisisContrato() {
   const [data, setData] = useState<AnalisisResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sinTdr, setSinTdr] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false
+    const ac = new AbortController()
     async function load() {
       if (!Number.isFinite(contratoId) || contratoId <= 0) {
         setError('Contrato inválido')
@@ -59,6 +60,7 @@ export default function AnalisisContrato() {
       }
       setLoading(true)
       setError(null)
+      setSinTdr(null)
       setData(null)
       try {
         const { data: row, error: err } = await supabase
@@ -68,29 +70,42 @@ export default function AnalisisContrato() {
           .maybeSingle()
         if (err) throw err
         if (!row) throw new Error('Contrato no encontrado')
-        if (!cancelled) setFicha(row as Contrato)
+        if (ac.signal.aborted) return
+        setFicha(row as Contrato)
 
         const res = await fetch(`${AI_PROXY}/analizar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contrato_id: contratoId }),
+          signal: ac.signal,
         })
-        const payload = await res.json() as AnalisisResponse & { error?: string; respuesta?: string }
+        const payload = await res.json() as AnalisisResponse & {
+          error?: string
+          respuesta?: string
+          status?: string
+          mensaje?: string
+        }
+        if (ac.signal.aborted) return
+        if (res.status === 422 && payload.status === 'sin_tdr') {
+          setSinTdr(payload.mensaje || 'este contrato no tiene TDR suficiente para analizar')
+          return
+        }
         if (!res.ok) {
           throw new Error(payload.respuesta || payload.error || `HTTP ${res.status}`)
         }
         if (payload.error && !payload.analisis) {
           throw new Error(payload.error)
         }
-        if (!cancelled) setData(payload)
+        setData(payload)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo analizar')
+        if ((e as Error).name === 'AbortError' || ac.signal.aborted) return
+        setError(e instanceof Error ? e.message : 'No se pudo analizar')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!ac.signal.aborted) setLoading(false)
       }
     }
     void load()
-    return () => { cancelled = true }
+    return () => { ac.abort() }
   }, [contratoId])
 
   const a = data?.analisis
@@ -143,6 +158,12 @@ export default function AnalisisContrato() {
           </>
         )}
       </header>
+
+      {sinTdr && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+          {sinTdr}
+        </div>
+      )}
 
       {error && (
         <ErrorBox retry={() => window.location.reload()}>{error}</ErrorBox>
