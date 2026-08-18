@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../lib/rutaDia'
 import { nivelLabel } from '../lib/rutaDia'
 import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
@@ -120,14 +121,12 @@ export default function OportunidadCard({
           >
             Ver en SEACE
           </a>
-          <button
-            type="button"
-            disabled
-            title="Próximamente — análisis de margen y TDR con IA"
-            className="cursor-not-allowed rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-400 dark:border-slate-700"
+          <Link
+            to={`/analisis/${c.id}`}
+            className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
           >
             Analizar
-          </button>
+          </Link>
         </div>
       </div>
     </article>
