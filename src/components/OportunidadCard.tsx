@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../lib/rutaDia'
 import { nivelLabel } from '../lib/rutaDia'
@@ -53,6 +54,8 @@ export default function OportunidadCard({
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
   const cerradoEval = c.estado === 'En Evaluación'
+  const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
+  const analisisNavLock = useRef(false)
 
   return (
     <article
@@ -123,9 +126,22 @@ export default function OportunidadCard({
           </a>
           <Link
             to={`/analisis/${c.id}`}
-            className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+            onClick={(e) => {
+              if (analisisNavLock.current) {
+                e.preventDefault()
+                return
+              }
+              analisisNavLock.current = true
+              setAbriendoAnalisis(true)
+            }}
+            aria-disabled={abriendoAnalisis}
+            className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium ${
+              abriendoAnalisis
+                ? 'pointer-events-none cursor-not-allowed border-slate-200 text-slate-400 dark:border-slate-700'
+                : 'border-slate-200 text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300'
+            }`}
           >
-            Analizar
+            {abriendoAnalisis ? 'Abriendo…' : 'Analizar'}
           </Link>
         </div>
       </div>
