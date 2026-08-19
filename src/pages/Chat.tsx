@@ -115,6 +115,22 @@ function parseSseBlock(block: string): unknown | null {
   }
 }
 
+const HISTORY_MAX_ITEMS = 8
+const HISTORY_MAX_CHARS = 500
+
+/** Últimos 4 pares para el Worker. El embed/RAG solo ven `query`; el history no resuelve "ese contrato". */
+function buildChatHistory(messages: Msg[]): { role: 'user' | 'bot'; text: string }[] {
+  const out: { role: 'user' | 'bot'; text: string }[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (i === 0 && m.role === 'bot') continue
+    if (m.error || m.limit) continue
+    if (m.role === 'bot' && !m.text.trim()) continue
+    out.push({ role: m.role, text: m.text.slice(0, HISTORY_MAX_CHARS) })
+  }
+  return out.slice(-HISTORY_MAX_ITEMS)
+}
+
 function mensajeLimite(status: number, data: { respuesta?: string; response?: string; error?: string }): string {
   const fromWorker = data.respuesta || data.response
   if (fromWorker) return fromWorker
@@ -223,6 +239,7 @@ export default function Chat() {
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
+    const history = buildChatHistory(messages)
     setInput('')
     setMessages(m => [
       ...m,
@@ -237,7 +254,7 @@ export default function Chat() {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q, history }),
         signal: ac.signal,
       })
       if (!res.ok) {
