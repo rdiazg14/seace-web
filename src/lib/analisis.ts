@@ -64,6 +64,22 @@ export interface AnalisisResponse {
   error?: string
 }
 
+export interface EscenarioPayload {
+  escenario: string
+  supuestos_aplicados: string[]
+  cambio_vs_analisis: string
+  sigue_sin_saberse: string[]
+  valor_estimado_soles: number | null
+  costo_estimado_soles: number | null
+  margen_estimado_soles: number | null
+  nota: string
+}
+
+/** Fail-closed: sin supuestos_aplicados no vacío, la UI no pinta montos. */
+export function escenarioMuestraCifras(e: EscenarioPayload | null | undefined): boolean {
+  return Boolean(e && Array.isArray(e.supuestos_aplicados) && e.supuestos_aplicados.length > 0)
+}
+
 export function soles(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return 'sin estimar'
   return n.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', maximumFractionDigits: 0 })
