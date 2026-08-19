@@ -261,7 +261,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Nuevos hoy" value={nuevosHoy.toLocaleString('es-PE')} hint="publicados 24 h" />
-        <Kpi label="Vigentes IT" value={vigentesItCount.toLocaleString('es-PE')} hint="cotización abierta" />
+        <Kpi label="Vigentes IT" value={vigentesItCount.toLocaleString('es-PE')} hint="proceso vigente en SEACE" />
         <Kpi
           label="Tendencia IT"
           value={`${tendenciaPct > 0 ? '+' : ''}${tendenciaPct}%`}
