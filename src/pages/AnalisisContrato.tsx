@@ -9,7 +9,9 @@ import {
   labelRubro,
   labelVeredicto,
   soles,
+  escenarioMuestraCifras,
   type AnalisisResponse,
+  type EscenarioPayload,
   type TonoCond,
 } from '../lib/analisis'
 import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
@@ -271,14 +273,231 @@ export default function AnalisisContrato() {
           )}
 
           <section className="rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-            <p className="text-sm font-medium">Chat de mejora</p>
+            <p className="text-sm font-medium">Chat de escenarios</p>
             <p className="mt-1 text-[12px] text-slate-500">
-              Próxima fase (memoria de conversación). Aquí podrás preguntar «¿y si uso instancias chicas?» y recalcular.
-              Por ahora el análisis de arriba es el veredicto inicial.
+              El análisis de arriba no cambia. Acá se recalcula un escenario con supuestos explícitos.
+              El número final lo pone ENERTRONIC.
             </p>
+            <ChatEscenarios contratoId={contratoId} />
           </section>
         </>
       )}
+    </div>
+  )
+}
+
+const CHIPS_ESCENARIO = [
+  'instancias más chicas',
+  '¿y si subo al techo S/40k?',
+  'subcontratar la nube',
+]
+
+const HISTORY_MAX_ITEMS = 8
+const HISTORY_MAX_CHARS = 500
+
+interface EscenaMsg {
+  role: 'user' | 'bot'
+  text: string
+  escenario?: EscenarioPayload | null
+  error?: boolean
+  limit?: boolean
+  aviso?: boolean
+}
+
+function buildEscenaHistory(messages: EscenaMsg[]): { role: 'user' | 'bot'; text: string }[] {
+  const out: { role: 'user' | 'bot'; text: string }[] = []
+  for (const m of messages) {
+    if (m.error || m.limit || m.aviso) continue
+    if (m.role === 'bot' && !m.text.trim()) continue
+    out.push({ role: m.role, text: m.text.slice(0, HISTORY_MAX_CHARS) })
+  }
+  return out.slice(-HISTORY_MAX_ITEMS)
+}
+
+function botHistoryText(e: EscenarioPayload): string {
+  if (!escenarioMuestraCifras(e)) {
+    return `${e.escenario}: escenario sin supuestos declarados, no se estima monto`
+  }
+  return `${e.escenario}. Asumiendo: ${e.supuestos_aplicados.join('; ')}`
+}
+
+function EscenarioCard({ e }: { e: EscenarioPayload }) {
+  const show = escenarioMuestraCifras(e)
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
+        Escenario estimado
+      </span>
+      <p className="mt-2 text-sm font-medium">{e.escenario}</p>
+      {show ? (
+        <>
+          <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
+            Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
+          </p>
+          <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
+            Asumiendo: {e.supuestos_aplicados.join('; ')}. — {e.nota}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Cambió vs análisis: {e.cambio_vs_analisis || '—'}
+            {e.sigue_sin_saberse.length > 0 && (
+              <> · Sigue sin saberse: {e.sigue_sin_saberse.join('; ')}</>
+            )}
+          </p>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-amber-800 dark:text-amber-200">
+          escenario sin supuestos declarados, no se estima monto
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ChatEscenarios({ contratoId }: { contratoId: number }) {
+  const [messages, setMessages] = useState<EscenaMsg[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function enviar(texto = input) {
+    const q = texto.trim()
+    if (!q || loading) return
+    const history = buildEscenaHistory(messages)
+    setInput('')
+    setMessages(m => [...m, { role: 'user', text: q }, { role: 'bot', text: '' }])
+    setLoading(true)
+    try {
+      const res = await fetch(`${AI_PROXY}/cotizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
+      })
+      const payload = await res.json() as {
+        escenario?: EscenarioPayload
+        status?: string
+        mensaje?: string
+        error?: string
+        respuesta?: string
+      }
+      if (res.status === 409 && payload.status === 'sin_analisis') {
+        setMessages(m => {
+          const next = [...m]
+          next[next.length - 1] = {
+            role: 'bot',
+            text: payload.mensaje || 'Primero analizá el contrato',
+            aviso: true,
+          }
+          return next
+        })
+        return
+      }
+      if (res.status === 429 || res.status === 503
+        || payload.error === 'rate_limited'
+        || payload.error === 'daily_limited'
+        || payload.error === 'over_capacity') {
+        setMessages(m => {
+          const next = [...m]
+          next[next.length - 1] = {
+            role: 'bot',
+            text: payload.respuesta || payload.mensaje
+              || (res.status === 503
+                ? 'Hay alta demanda en el asistente. Intenta más tarde.'
+                : 'Has hecho demasiadas consultas. Espera un minuto e intenta de nuevo.'),
+            limit: true,
+          }
+          return next
+        })
+        return
+      }
+      if (!res.ok || !payload.escenario) {
+        throw new Error(payload.respuesta || payload.error || `HTTP ${res.status}`)
+      }
+      const e = payload.escenario
+      setMessages(m => {
+        const next = [...m]
+        next[next.length - 1] = {
+          role: 'bot',
+          text: botHistoryText(e),
+          escenario: e,
+        }
+        return next
+      })
+    } catch (err) {
+      setMessages(m => {
+        const next = [...m]
+        next[next.length - 1] = {
+          role: 'bot',
+          text: err instanceof Error ? err.message : 'No pude recalcular el escenario',
+          error: true,
+        }
+        return next
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {messages.map((m, i) => (
+        <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[92%] ${m.role === 'user' ? '' : 'w-full'}`}>
+            {m.role === 'user' ? (
+              <p className="rounded-2xl rounded-br-sm bg-teal-500 px-3.5 py-2.5 text-sm text-white">{m.text}</p>
+            ) : m.aviso ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                {m.text}
+              </div>
+            ) : m.limit ? (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                {m.text}
+              </div>
+            ) : m.error ? (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
+                {m.text}
+              </div>
+            ) : m.escenario ? (
+              <EscenarioCard e={m.escenario} />
+            ) : (
+              <p className="text-xs text-slate-500">{loading && i === messages.length - 1 ? 'Recalculando escenario…' : m.text}</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {!loading && (
+        <div className="flex flex-wrap gap-2">
+          {CHIPS_ESCENARIO.map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => void enviar(s)}
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <form
+        className="flex gap-2"
+        onSubmit={e => { e.preventDefault(); void enviar() }}
+      >
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          disabled={loading}
+          placeholder="¿Y si…? (el análisis de arriba no cambia)"
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || loading}
+          className="rounded-xl bg-teal-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        >
+          Enviar
+        </button>
+      </form>
     </div>
   )
 }
