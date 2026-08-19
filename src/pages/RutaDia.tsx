@@ -76,7 +76,6 @@ export default function RutaDia() {
   const today = limaDateISO()
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
-  const iso24h = useMemo(() => new Date(Date.now() - 86400000).toISOString(), [])
 
   const scored = useMemo(() => rankingActivo(raw.map(puntuar), today), [raw, today])
 
@@ -92,7 +91,7 @@ export default function RutaDia() {
 
   const kpis = useMemo(() => {
     const vigentes = scored.filter(o => o.postulable)
-    const nuevosHoy = raw.filter(c => (c.fecha_publica || '') >= iso24h).length
+    const nuevosHoy = raw.filter(c => dayOf(c.fecha_publica) === today).length
     let cierranHoy = 0
     let cierranManana = 0
     let cierranSemana = 0
@@ -111,12 +110,12 @@ export default function RutaDia() {
       }
       const d = dayOf(o.contrato.fecha_fin_cotizacion)
       if (!d) continue
-      if (d <= today) cierranHoy += 1
+      if (d === today) cierranHoy += 1
       else if (d === tomorrow) cierranManana += 1
       else if (d <= weekEnd) cierranSemana += 1
     }
     return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel }
-  }, [scored, raw, iso24h, today, tomorrow, weekEnd])
+  }, [scored, raw, today, tomorrow, weekEnd])
 
   const visible: Oportunidad[] = filtrado.slice(0, mostrar)
   const hayMas = filtrado.length > mostrar
