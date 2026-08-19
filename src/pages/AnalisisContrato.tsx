@@ -11,7 +11,12 @@ import {
   soles,
   escenarioMuestraCifras,
   type AnalisisResponse,
+  type ClausulaCritica,
+  type ComponenteServicio,
+  type EntregableContractual,
   type EscenarioPayload,
+  type RequisitosProveedor,
+  type RiesgosContractuales,
   type TonoCond,
 } from '../lib/analisis'
 import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
@@ -21,6 +26,173 @@ function tonoCls(t: TonoCond): string {
   if (t === 'ok') return 'border-emerald-500/40 bg-emerald-500/10'
   if (t === 'bad') return 'border-red-500/40 bg-red-500/10'
   return 'border-amber-500/40 bg-amber-500/10'
+}
+
+function riesgoCls(r: 'alto' | 'medio' | 'bajo'): string {
+  if (r === 'alto') return 'bg-red-500/15 text-red-700 dark:text-red-300'
+  if (r === 'medio') return 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
+  return 'bg-slate-500/15 text-slate-600 dark:text-slate-300'
+}
+
+function impactoBorder(r: 'alto' | 'medio' | 'bajo'): string {
+  if (r === 'alto') return 'border-red-500/40 bg-red-500/10'
+  if (r === 'medio') return 'border-amber-500/40 bg-amber-500/10'
+  return 'border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'
+}
+
+function labelPlazoRef(r?: EntregableContractual['plazo_referencia']): string {
+  if (r === 'desde_notificacion') return 'Desde notificación'
+  if (r === 'desde_conclusion') return 'Desde conclusión'
+  if (r === 'otro') return 'Otro'
+  return '—'
+}
+
+function ComponenteCard({ c }: { c: ComponenteServicio }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      <p className="text-sm font-medium">{c.nombre}</p>
+      <p className="mt-1 text-[12px] text-slate-500">
+        {c.participantes_max != null && <>Hasta {c.participantes_max} participantes</>}
+        {c.participantes_max != null && (c.horas_min != null || c.sesiones_min != null) && ' · '}
+        {c.horas_min != null && <>{c.horas_min} h mín.</>}
+        {c.horas_min != null && c.sesiones_min != null && ' · '}
+        {c.sesiones_min != null && <>{c.sesiones_min} sesiones mín.</>}
+      </p>
+      {c.modalidad && <p className="mt-1 text-[11px] text-slate-400">{c.modalidad}</p>}
+      {(c.temario?.length ?? 0) > 0 && (
+        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[12px] text-slate-600 dark:text-slate-300">
+          {c.temario!.map((t, i) => <li key={i}>{t}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
+  const consorcio = r.admite_consorcio
+  const certs = r.certificaciones_especificas
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+      <p className="text-[11px] text-slate-500">Requisitos del proveedor</p>
+      {(r.habilitaciones?.length ?? 0) > 0 && (
+        <ul className="mt-1 space-y-0.5 text-[12px] text-slate-600 dark:text-slate-300">
+          {r.habilitaciones!.map((h, i) => <li key={i}>✅ {h}</li>)}
+        </ul>
+      )}
+      {r.experiencia_minima && (
+        <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">✅ {r.experiencia_minima}</p>
+      )}
+      {Array.isArray(certs) && certs.length === 0 && (
+        <span className="mt-2 inline-block rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+          Sin certificaciones específicas requeridas
+        </span>
+      )}
+      {(certs?.length ?? 0) > 0 && (
+        <ul className="mt-1 list-disc pl-4 text-[12px] text-slate-600 dark:text-slate-300">
+          {certs!.map((c, i) => <li key={i}>{c}</li>)}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px]">
+        {consorcio === true && (
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">✅ Consorcio: Sí</span>
+        )}
+        {consorcio === false && (
+          <span className="rounded-full bg-red-500/15 px-2 py-0.5 font-medium text-red-700 dark:text-red-300">❌ Consorcio: No</span>
+        )}
+        {consorcio == null && (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-200">⚠️ Consorcio: No consta</span>
+        )}
+      </p>
+    </div>
+  )
+}
+
+function EntregablesTable({ items }: { items: EntregableContractual[] }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-medium">Entregables</h2>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <table className="w-full min-w-[520px] text-left text-[12px]">
+          <thead className="bg-slate-50 text-[11px] text-slate-500 dark:bg-slate-900">
+            <tr>
+              <th className="px-3 py-2 font-medium">Entregable</th>
+              <th className="px-3 py-2 font-medium">Plazo</th>
+              <th className="px-3 py-2 font-medium">Referencia</th>
+              <th className="px-3 py-2 font-medium">Riesgo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((e, i) => (
+              <tr key={`${e.nombre}-${i}`} className="border-t border-slate-200 dark:border-slate-800">
+                <td className="px-3 py-2">
+                  <p className="font-medium text-slate-800 dark:text-slate-100">{e.nombre}</p>
+                  {e.descripcion && <p className="mt-0.5 text-slate-500">{e.descripcion}</p>}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {e.plazo_dias != null ? `${e.plazo_dias} días` : '—'}
+                </td>
+                <td className="px-3 py-2">{labelPlazoRef(e.plazo_referencia)}</td>
+                <td className="px-3 py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${riesgoCls(e.riesgo_penalidad)}`}>
+                    {e.riesgo_penalidad}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function RiesgosBlock({ r }: { r: RiesgosContractuales }) {
+  const criticas: ClausulaCritica[] = r.clausulas_criticas || []
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-medium">Riesgos contractuales</h2>
+      <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+        {r.propiedad_materiales && (
+          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+            Propiedad materiales: {r.propiedad_materiales}
+          </span>
+        )}
+        {r.plataforma_provee && (
+          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+            Plataforma: {r.plataforma_provee}
+          </span>
+        )}
+        {r.penalidad_factor_f != null && (
+          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+            F = {r.penalidad_factor_f}
+          </span>
+        )}
+        {r.penalidad_tope_pct != null && (
+          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+            Tope {r.penalidad_tope_pct}%
+          </span>
+        )}
+      </div>
+      {r.penalidad_formula && (
+        <p className="mb-3 text-[12px] text-slate-500">{r.penalidad_formula}</p>
+      )}
+      {criticas.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {criticas.map((c, i) => (
+            <div key={`${c.clausula}-${i}`} className={`rounded-xl border p-3 ${impactoBorder(c.impacto)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{c.clausula}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${riesgoCls(c.impacto)}`}>
+                  {c.impacto}
+                </span>
+              </div>
+              <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">{c.descripcion}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function CondCard({
@@ -201,6 +373,17 @@ export default function AnalisisContrato() {
             <p className="text-sm text-slate-700 dark:text-slate-300">{a.resumen}</p>
           </section>
 
+          {(a.componentes_servicio?.length ?? 0) > 1 && (
+            <section>
+              <h2 className="mb-2 text-sm font-medium">Componentes del servicio</h2>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {a.componentes_servicio!.map((c, i) => (
+                  <ComponenteCard key={`${c.nombre}-${i}`} c={c} />
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
               <p className="text-[11px] text-slate-500">Encaje</p>
@@ -209,6 +392,9 @@ export default function AnalisisContrato() {
               </p>
               <p className="mt-1 text-[11px] text-slate-500">Perfil pedido: {a.encaje.perfil_pedido || 'no consta'}</p>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{a.encaje.razon}</p>
+              {a.requisitos_proveedor && (
+                <RequisitosBlock r={a.requisitos_proveedor} />
+              )}
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
               <p className="text-[11px] text-slate-500">Economía (estimaciones)</p>
@@ -247,6 +433,14 @@ export default function AnalisisContrato() {
               />
             </div>
           </section>
+
+          {(a.estructura_contractual?.entregables?.length ?? 0) > 0 && (
+            <EntregablesTable items={a.estructura_contractual!.entregables!} />
+          )}
+
+          {a.riesgos_contractuales && (
+            <RiesgosBlock r={a.riesgos_contractuales} />
+          )}
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -354,13 +548,45 @@ function EscenarioCard({ e }: { e: EscenarioPayload }) {
 }
 
 function ChatEscenarios({ contratoId }: { contratoId: number }) {
+  const STORAGE_KEY = `chat_escenarios_${contratoId}`
   const [messages, setMessages] = useState<EscenaMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [skipPersist, setSkipPersist] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as unknown
+        if (Array.isArray(parsed)) setMessages(parsed.slice(-20) as EscenaMsg[])
+        else setMessages([])
+      } else {
+        setMessages([])
+      }
+    } catch {
+      setMessages([])
+    }
+    setReady(true)
+  }, [STORAGE_KEY])
+
+  useEffect(() => {
+    if (!ready || skipPersist) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-20)))
+    } catch { /* quota */ }
+  }, [messages, ready, STORAGE_KEY, skipPersist])
+
+  function nuevaConsulta() {
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
+    setMessages([])
+  }
 
   async function enviar(texto = input) {
     const q = texto.trim()
     if (!q || loading) return
+    setSkipPersist(false)
     const history = buildEscenaHistory(messages)
     setInput('')
     setMessages(m => [...m, { role: 'user', text: q }, { role: 'bot', text: '' }])
@@ -368,7 +594,10 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
     try {
       const res = await fetch(`${AI_PROXY}/cotizar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(contratoId ? { 'X-Contrato-Id': String(contratoId) } : {}),
+        },
         body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
       })
       const payload = await res.json() as {
@@ -379,6 +608,8 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
         respuesta?: string
       }
       if (res.status === 409 && payload.status === 'sin_analisis') {
+        setSkipPersist(true)
+        try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
         setMessages(m => {
           const next = [...m]
           next[next.length - 1] = {
@@ -465,7 +696,7 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
       ))}
 
       {!loading && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {CHIPS_ESCENARIO.map(s => (
             <button
               key={s}
@@ -476,6 +707,15 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
               {s}
             </button>
           ))}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={nuevaConsulta}
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:border-red-300 dark:border-slate-700"
+            >
+              Nueva consulta
+            </button>
+          )}
         </div>
       )}
 
