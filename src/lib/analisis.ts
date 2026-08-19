@@ -41,6 +41,46 @@ export interface AnalisisVeredicto {
   aviso_humano: string
 }
 
+export interface EntregableContractual {
+  nombre: string
+  plazo_dias?: number | null
+  plazo_referencia?: 'desde_notificacion' | 'desde_conclusion' | 'otro'
+  descripcion: string
+  riesgo_penalidad: 'alto' | 'medio' | 'bajo'
+}
+
+export interface ComponenteServicio {
+  nombre: string
+  participantes_max?: number | null
+  horas_min?: number | null
+  sesiones_min?: number | null
+  modalidad?: string
+  temario?: string[]
+}
+
+export interface ClausulaCritica {
+  clausula: string
+  descripcion: string
+  impacto: 'alto' | 'medio' | 'bajo'
+}
+
+export interface RequisitosProveedor {
+  habilitaciones?: string[]
+  experiencia_minima?: string | null
+  certificaciones_especificas?: string[]
+  documentos_acreditacion?: string[]
+  admite_consorcio?: boolean | null
+}
+
+export interface RiesgosContractuales {
+  penalidad_formula?: string | null
+  penalidad_factor_f?: number | null
+  penalidad_tope_pct?: number | null
+  propiedad_materiales?: 'cliente' | 'proveedor' | 'compartida' | 'no_consta' | null
+  plataforma_provee?: 'proveedor' | 'cliente' | 'no_consta' | null
+  clausulas_criticas?: ClausulaCritica[]
+}
+
 export interface AnalisisPayload {
   resumen: string
   encaje: AnalisisEncaje
@@ -48,6 +88,10 @@ export interface AnalisisPayload {
   economia: AnalisisEconomia
   veredicto: AnalisisVeredicto
   optimizacion: string[]
+  estructura_contractual?: { entregables?: EntregableContractual[] } | null
+  componentes_servicio?: ComponenteServicio[] | null
+  requisitos_proveedor?: RequisitosProveedor | null
+  riesgos_contractuales?: RiesgosContractuales | null
 }
 
 export interface AnalisisResponse {
