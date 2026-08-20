@@ -22,6 +22,7 @@ import {
 import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
 import { ErrorBox, Skeleton } from '../components/ui'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
+import { TimelineCard } from '../components/TimelineFishbone'
 import {
   AlternativasBlock,
   ComponentesTabs,
@@ -442,7 +443,9 @@ export default function AnalisisContrato() {
             </div>
           </section>
 
-          {/* Timeline: Iteración 3 */}
+          {(a.timeline?.hitos?.length ?? 0) > 0 && (
+            <TimelineCard timeline={a.timeline!} />
+          )}
 
           <section>
             <h2 className="mb-2 text-sm font-medium">Condiciones (del TDR)</h2>
