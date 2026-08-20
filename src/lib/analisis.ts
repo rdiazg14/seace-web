@@ -176,7 +176,24 @@ export interface AnalisisResponse {
   error?: string
 }
 
+export type TipoRespuestaChat = 'texto' | 'tabla' | 'grafica' | 'tabla_grafica'
+export type TipoGraficaChat = 'barras' | 'pie' | 'lineas'
+
+export interface ChatTabla {
+  titulo: string
+  columnas: string[]
+  filas: string[][]
+}
+
+export interface ChatGrafica {
+  tipo_grafica: TipoGraficaChat
+  titulo: string
+  datos: { label: string; valor: number }[]
+  unidad: string
+}
+
 export interface EscenarioPayload {
+  tipo_respuesta?: TipoRespuestaChat
   escenario: string
   supuestos_aplicados: string[]
   cambio_vs_analisis: string
@@ -185,6 +202,9 @@ export interface EscenarioPayload {
   costo_estimado_soles: number | null
   margen_estimado_soles: number | null
   nota: string
+  tabla?: ChatTabla | null
+  grafica?: ChatGrafica | null
+  recomendacion?: string | null
 }
 
 /** Fail-closed: sin supuestos_aplicados no vacío, la UI no pinta montos. */

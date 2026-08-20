@@ -15,6 +15,8 @@ import {
   type ClausulaCritica,
   type EntregableContractual,
   type EscenarioPayload,
+  type ChatGrafica,
+  type ChatTabla,
   type RequisitosProveedor,
   type RiesgosContractuales,
   type TonoCond,
@@ -23,6 +25,8 @@ import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
 import { ErrorBox, Skeleton } from '../components/ui'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { TimelineCard } from '../components/TimelineFishbone'
+import { ChatTable } from '../components/ChatTable'
+import { ChatChart } from '../components/ChatChart'
 import {
   AlternativasBlock,
   ComponentesTabs,
@@ -558,48 +562,125 @@ function buildEscenaHistory(messages: EscenaMsg[]): { role: 'user' | 'bot'; text
 }
 
 function botHistoryText(e: EscenarioPayload): string {
+  const tipo = e.tipo_respuesta || 'texto'
+  const head = e.escenario.replace(/\s+/g, ' ').slice(0, 280)
   if (!escenarioMuestraCifras(e)) {
-    return `${e.escenario}: escenario sin supuestos declarados, no se estima monto`
+    return `[${tipo}] ${head}`
   }
-  return `${e.escenario}. Asumiendo: ${e.supuestos_aplicados.join('; ')}`
+  return `[${tipo}] ${head}. Asumiendo: ${e.supuestos_aplicados.join('; ')}`
+}
+
+function tablaValida(t: ChatTabla | null | undefined): t is ChatTabla {
+  return Boolean(t && Array.isArray(t.columnas) && t.columnas.length && Array.isArray(t.filas) && t.filas.length)
+}
+
+function graficaValida(g: ChatGrafica | null | undefined): g is ChatGrafica {
+  return Boolean(g && Array.isArray(g.datos) && g.datos.some(d => d && typeof d.valor === 'number'))
+}
+
+function ChatMedia({ tabla, grafica }: { tabla: ChatTabla | null; grafica: ChatGrafica | null }) {
+  const [tab, setTab] = useState<'tabla' | 'grafica'>('tabla')
+  const hasT = tablaValida(tabla)
+  const hasG = graficaValida(grafica)
+  if (hasT && hasG) {
+    return (
+      <div className="mt-3">
+        <div className="mb-2 flex gap-1 rounded-lg border border-[var(--border)] p-0.5">
+          <button
+            type="button"
+            onClick={() => setTab('tabla')}
+            className={`flex-1 rounded-md px-2 py-1 text-xs ${
+              tab === 'tabla' ? 'bg-teal-500/15 font-medium text-teal-800 dark:text-teal-200' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            Tabla
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('grafica')}
+            className={`flex-1 rounded-md px-2 py-1 text-xs ${
+              tab === 'grafica' ? 'bg-teal-500/15 font-medium text-teal-800 dark:text-teal-200' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            Gráfica
+          </button>
+        </div>
+        {tab === 'tabla' ? <ChatTable tabla={tabla} /> : <ChatChart grafica={grafica} />}
+      </div>
+    )
+  }
+  if (hasT) return <ChatTable tabla={tabla} />
+  if (hasG) return <ChatChart grafica={grafica} />
+  return null
 }
 
 function EscenarioCard({ e }: { e: EscenarioPayload }) {
-  const show = escenarioMuestraCifras(e)
+  const showMontos = escenarioMuestraCifras(e)
+  const tabla = tablaValida(e.tabla) ? e.tabla : null
+  const grafica = graficaValida(e.grafica) ? e.grafica : null
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
       <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
         Escenario estimado
       </span>
       <div className="mt-2">
-        <MarkdownRenderer content={e.escenario} className="text-sm font-medium" />
+        <MarkdownRenderer content={e.escenario} className="text-sm" />
       </div>
-      {show ? (
-        <>
-          <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
-            Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
-          </p>
-          <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
-            Asumiendo: {e.supuestos_aplicados.join('; ')}.
-          </p>
-          <MarkdownRenderer content={e.nota} className="mt-1 text-sm" />
-          <p className="mt-1 text-[11px] text-slate-500">
-            Cambió vs análisis: {e.cambio_vs_analisis || '—'}
-            {e.sigue_sin_saberse.length > 0 && (
-              <> · Sigue sin saberse: {e.sigue_sin_saberse.join('; ')}</>
-            )}
-          </p>
-        </>
-      ) : (
-        <>
-          {e.nota && <MarkdownRenderer content={e.nota} className="mt-2 text-sm" />}
-          <p className="mt-2 text-sm text-amber-800 dark:text-amber-200">
-            escenario sin supuestos declarados, no se estima monto
-          </p>
-        </>
+      <ChatMedia tabla={tabla} grafica={grafica} />
+      {e.recomendacion && (
+        <div className="mt-3 rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm">
+          💡 {e.recomendacion}
+        </div>
+      )}
+      {showMontos && (
+        <p className="mt-2 text-sm text-slate-800 dark:text-slate-100">
+          Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
+        </p>
+      )}
+      {(e.supuestos_aplicados?.length ?? 0) > 0 && (
+        <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+          Asumiendo: {e.supuestos_aplicados.join('; ')}.
+        </p>
+      )}
+      {e.nota && <MarkdownRenderer content={e.nota} className="mt-2 text-[11px] text-[var(--text-secondary)]" />}
+      {(e.cambio_vs_analisis || (e.sigue_sin_saberse?.length ?? 0) > 0) && (
+        <p className="mt-1 text-[11px] text-slate-500">
+          {e.cambio_vs_analisis ? `Cambió vs análisis: ${e.cambio_vs_analisis}` : null}
+          {(e.sigue_sin_saberse?.length ?? 0) > 0 && (
+            <>{e.cambio_vs_analisis ? ' · ' : ''}Sigue sin saberse: {e.sigue_sin_saberse.join('; ')}</>
+          )}
+        </p>
       )}
     </div>
   )
+}
+
+function hydrateEscenario(raw: unknown): EscenarioPayload | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as EscenarioPayload
+  if (e.tabla && Array.isArray(e.tabla.filas)) {
+    e.tabla = {
+      ...e.tabla,
+      filas: e.tabla.filas.map((row) => {
+        if (Array.isArray(row)) return row.map((c) => (c == null ? '' : String(c)))
+        if (row && typeof row === 'object' && Array.isArray((row as { celdas?: unknown }).celdas)) {
+          return (row as { celdas: unknown[] }).celdas.map((c) => (c == null ? '' : String(c)))
+        }
+        return []
+      }),
+    }
+  }
+  return e
+}
+
+function hydrateMsgs(parsed: unknown): EscenaMsg[] {
+  if (!Array.isArray(parsed)) return []
+  return parsed.slice(-20).map((m) => {
+    if (!m || typeof m !== 'object') return null
+    const row = m as EscenaMsg
+    if (row.escenario) row.escenario = hydrateEscenario(row.escenario)
+    return row
+  }).filter((m): m is EscenaMsg => Boolean(m && (m.role === 'user' || m.role === 'bot')))
 }
 
 function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; chipsIniciales?: string[] }) {
@@ -617,13 +698,11 @@ function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; ch
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved) as unknown
-        if (Array.isArray(parsed)) setMessages(parsed.slice(-20) as EscenaMsg[])
-        else setMessages([])
-      } else {
-        setMessages([])
-      }
+        if (saved) {
+          setMessages(hydrateMsgs(JSON.parse(saved)))
+        } else {
+          setMessages([])
+        }
     } catch {
       setMessages([])
     }
@@ -730,10 +809,10 @@ function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; ch
       const e = payload.escenario
       setMessages(m => {
         const next = [...m]
-        next[next.length - 1] = {
+          next[next.length - 1] = {
           role: 'bot',
           text: botHistoryText(e),
-          escenario: e,
+          escenario: hydrateEscenario(e) ?? e,
         }
         return next
       })
