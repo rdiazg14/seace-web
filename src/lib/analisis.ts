@@ -125,6 +125,26 @@ export interface Alternativa {
   riesgo_clave?: string | null
 }
 
+export type TimelineHitoTipo = 'inicio' | 'entregable' | 'hito' | 'soporte'
+
+export interface TimelineHito {
+  orden: number
+  nombre: string
+  tipo: TimelineHitoTipo
+  momento_texto: string
+  momento_dia?: number | null
+  tiene_pago: boolean
+  pago_texto?: string | null
+  pago_momento?: string | null
+  es_critico: boolean
+  nota_critica?: string | null
+}
+
+export interface Timeline {
+  duracion_total_texto?: string
+  hitos?: TimelineHito[]
+}
+
 export interface AnalisisPayload {
   resumen: string
   encaje: AnalisisEncaje
@@ -139,8 +159,7 @@ export interface AnalisisPayload {
   chips_sugeridos?: string[] | null
   viabilidad?: Viabilidad | null
   alternativas?: Alternativa[] | null
-  /** Solo duracion_total_texto se usa en Iteración 2. Hitos = Iteración 3. */
-  timeline?: { duracion_total_texto?: string | null } | null
+  timeline?: Timeline | null
 }
 
 export interface AnalisisResponse {

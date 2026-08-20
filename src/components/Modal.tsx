@@ -5,11 +5,13 @@ export function Modal({
   onClose,
   title,
   children,
+  wide = false,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: ReactNode
+  wide?: boolean
 }) {
   useEffect(() => {
     if (!open) return
@@ -37,7 +39,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="my-6 w-full max-w-3xl rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 text-[var(--text-primary)] shadow-xl sm:p-6"
+        className={`my-6 w-full rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 text-[var(--text-primary)] shadow-xl sm:p-6 ${
+          wide ? 'max-w-[min(96vw,72rem)]' : 'max-w-3xl'
+        }`}
         onClick={e => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">

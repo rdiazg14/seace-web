@@ -10,6 +10,11 @@
   --text-secondary: #52525b;
   --border: #e4e4e7;
   --accent: #10b981;
+  --tl-entregable: #7c3aed;
+  --tl-pago: #059669;
+  --tl-soporte: #2563eb;
+  --tl-axis: #a1a1aa;
+  --tl-critico: #dc2626;
 }
 
 .dark {
@@ -20,6 +25,11 @@
   --text-secondary: #a1a1aa;
   --border: #3f3f46;
   --accent: #10b981;
+  --tl-entregable: #c4b5fd;
+  --tl-pago: #34d399;
+  --tl-soporte: #60a5fa;
+  --tl-axis: #71717a;
+  --tl-critico: #f87171;
 }
 
 html,
