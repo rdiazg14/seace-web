@@ -82,13 +82,13 @@ function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
       )}
       <p className="mt-2 text-[11px]">
         {consorcio === true && (
-          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">✅ Consorcio: Sí</span>
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">✓ Consorcio: Sí</span>
         )}
         {consorcio === false && (
-          <span className="rounded-full bg-red-500/15 px-2 py-0.5 font-medium text-red-700 dark:text-red-300">❌ Consorcio: No</span>
+          <span className="rounded-full bg-red-500/15 px-2 py-0.5 font-medium text-red-700 dark:text-red-300">✕ Consorcio: No</span>
         )}
         {consorcio == null && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-200">⚠️ Consorcio: No consta</span>
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-200">⚠ Consorcio: no consta en TDR — verificar en bases</span>
         )}
       </p>
     </div>
@@ -501,11 +501,11 @@ export default function AnalisisContrato() {
             </div>
           </section>
 
-          {(a.optimizacion || []).length > 0 && (
+          {(a.optimizacion || []).filter(s => String(s).trim()).length > 0 && (
             <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-sm font-medium">Cómo mejorar el margen</p>
               <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-600 dark:text-slate-300">
-                {a.optimizacion.map((s, i) => <li key={i}>{s}</li>)}
+                {a.optimizacion.filter(s => String(s).trim()).map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </section>
           )}
