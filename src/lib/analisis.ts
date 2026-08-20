@@ -81,6 +81,50 @@ export interface RiesgosContractuales {
   clausulas_criticas?: ClausulaCritica[]
 }
 
+export interface RatioAlcance {
+  valor_mercado_min?: number | null
+  valor_mercado_max?: number | null
+  techo_contrato: number
+  ratio_texto: string
+  lectura: string
+}
+
+export interface CotizacionComponente {
+  componente: string
+  mercado_min?: number | null
+  mercado_max?: number | null
+  nota?: string
+}
+
+export interface ContradiccionTdr {
+  descripcion: string
+  impacto: 'alto' | 'medio' | 'bajo'
+}
+
+export interface Viabilidad {
+  ratio_alcance?: RatioAlcance | null
+  cotizacion_por_componente?: CotizacionComponente[]
+  contradicciones_tdr?: ContradiccionTdr[]
+}
+
+export interface AlternativaEconomia {
+  valor?: number | null
+  costo?: number | null
+  margen?: number | null
+  nota?: string | null
+}
+
+export interface Alternativa {
+  etiqueta: string
+  titulo: string
+  viabilidad: 'viable' | 'viable_condicionada' | 'inviable'
+  veredicto_corto: string
+  explicacion: string
+  recomendada: boolean
+  economia?: AlternativaEconomia | null
+  riesgo_clave?: string | null
+}
+
 export interface AnalisisPayload {
   resumen: string
   encaje: AnalisisEncaje
@@ -93,6 +137,10 @@ export interface AnalisisPayload {
   requisitos_proveedor?: RequisitosProveedor | null
   riesgos_contractuales?: RiesgosContractuales | null
   chips_sugeridos?: string[] | null
+  viabilidad?: Viabilidad | null
+  alternativas?: Alternativa[] | null
+  /** Solo duracion_total_texto se usa en Iteración 2. Hitos = Iteración 3. */
+  timeline?: { duracion_total_texto?: string | null } | null
 }
 
 export interface AnalisisResponse {
@@ -126,8 +174,14 @@ export function escenarioMuestraCifras(e: EscenarioPayload | null | undefined): 
 }
 
 export function soles(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return 'sin estimar'
-  return n.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', maximumFractionDigits: 0 })
+  if (n == null || Number.isNaN(n)) return '—'
+  return `S/ ${n.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
+}
+
+export function rangoSoles(min?: number | null, max?: number | null): string {
+  if (min == null && max == null) return '—'
+  if (min != null && max != null) return `${soles(min)} – ${soles(max)}`
+  return soles(min ?? max)
 }
 
 export function labelRubro(r: RubroAnalisis): string {
