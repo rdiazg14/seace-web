@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertCircle, MessageCircle, X } from 'lucide-react'
+import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
@@ -216,13 +216,16 @@ function CondCard({
 }
 
 const CHAT_PANEL_W = 380
+const DESKTOP_MQ = '(min-width: 1024px)'
+
+function isDesktopViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(DESKTOP_MQ).matches
+}
 
 function useDesktop(): boolean {
-  const [desktop, setDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true,
-  )
+  const [desktop, setDesktop] = useState(isDesktopViewport)
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
+    const mq = window.matchMedia(DESKTOP_MQ)
     const apply = () => setDesktop(mq.matches)
     apply()
     mq.addEventListener('change', apply)
@@ -241,7 +244,7 @@ export default function AnalisisContrato() {
   const [error, setError] = useState<string | null>(null)
   const [error502, setError502] = useState(false)
   const [sinTdr, setSinTdr] = useState<string | null>(null)
-  const [chatOpen, setChatOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(isDesktopViewport)
 
   useEffect(() => {
     const ac = new AbortController()
@@ -308,7 +311,7 @@ export default function AnalisisContrato() {
   }, [contratoId])
 
   useEffect(() => {
-    setChatOpen(false)
+    setChatOpen(isDesktopViewport())
   }, [contratoId])
 
   const a = data?.analisis
@@ -544,14 +547,6 @@ export default function AnalisisContrato() {
               </ul>
             </section>
           )}
-
-          <button
-            type="button"
-            onClick={() => setChatOpen(true)}
-            className="w-full rounded-xl border border-dashed border-slate-300 px-3 py-3 text-left text-sm text-[var(--text-secondary)] hover:border-teal-400 dark:border-slate-700"
-          >
-            ¿Dudas sobre este contrato? Abre el asistente →
-          </button>
         </>
       )}
     </div>
@@ -588,6 +583,139 @@ interface EscenaMsg {
   limit?: boolean
   aviso?: boolean
   query?: string
+  streaming?: boolean
+  progress?: boolean
+  phase?: 'clasificar' | 'contexto' | 'redactar'
+  streamText?: string
+}
+
+type CotizarSseEvent = {
+  type?: string
+  phase?: string
+  message?: string
+  token?: string
+  escenario?: EscenarioPayload
+  clasificacion?: unknown
+}
+
+function persistMsg(m: EscenaMsg): EscenaMsg {
+  return {
+    role: m.role,
+    text: m.text,
+    type: m.type,
+    escenario: m.escenario,
+    error: m.error,
+    limit: m.limit,
+    aviso: m.aviso,
+    query: m.query,
+  }
+}
+
+function hayMontosReales(e: EscenarioPayload): boolean {
+  return e.valor_estimado_soles != null
+}
+
+function cambioRelevante(s?: string): string {
+  const t = (s || '').trim()
+  if (!t || /^(ninguno|ninguna|n\/a|n\.?a\.?|sin cambios?|no (hay|aplica)|—|-)$/i.test(t)) return ''
+  return t
+}
+
+const ANALISIS_PHASES: { id: NonNullable<EscenaMsg['phase']>; label: string }[] = [
+  { id: 'clasificar', label: 'Clasificando tu pregunta...' },
+  { id: 'contexto', label: 'Recuperando contexto del contrato...' },
+  { id: 'redactar', label: 'Redactando respuesta...' },
+]
+
+function AnalizandoBlock({
+  phase,
+  collapsed,
+}: {
+  phase: EscenaMsg['phase']
+  collapsed: boolean
+}) {
+  const [open, setOpen] = useState(!collapsed)
+  useEffect(() => {
+    setOpen(!collapsed)
+  }, [collapsed])
+
+  if (collapsed && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mb-2 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      >
+        Analizado ✓
+      </button>
+    )
+  }
+
+  const idx = ANALISIS_PHASES.findIndex(p => p.id === phase)
+
+  return (
+    <div className="mb-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-primary)]">
+          {!collapsed && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />}
+          {collapsed ? 'Analizado ✓' : 'Analizando...'}
+        </span>
+        {collapsed && (
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            Ocultar
+          </button>
+        )}
+      </div>
+      <ul className="mt-1.5 space-y-0.5 text-[11px] text-[var(--text-secondary)]">
+        {ANALISIS_PHASES.map((s, si) => {
+          const active = !collapsed && s.id === phase
+          const doneStep = collapsed || si < idx
+          return (
+            <li
+              key={s.id}
+              className={active ? 'font-medium text-[var(--text-primary)]' : ''}
+            >
+              {doneStep ? '✓' : active ? '●' : '○'} {s.label}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+async function readSseEvents(
+  res: Response,
+  onEvent: (ev: CotizarSseEvent) => void,
+): Promise<void> {
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('sin stream')
+  const decoder = new TextDecoder()
+  let buf = ''
+  const consume = (block: string) => {
+    const line = block.split('\n').find(l => l.startsWith('data:'))
+    if (!line) return
+    const payload = line.slice(5).trim()
+    if (!payload || payload === '[DONE]') return
+    try {
+      onEvent(JSON.parse(payload) as CotizarSseEvent)
+    } catch {
+      /* chunk parcial */
+    }
+  }
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() ?? ''
+    for (const part of parts) consume(part)
+  }
+  if (buf.trim()) consume(buf)
 }
 
 function buildEscenaHistory(messages: EscenaMsg[]): { role: 'user' | 'bot'; text: string }[] {
@@ -654,39 +782,59 @@ function ChatMedia({ tabla, grafica }: { tabla: ChatTabla | null; grafica: ChatG
 }
 
 function EscenarioCard({ e }: { e: EscenarioPayload }) {
-  const showMontos = escenarioMuestraCifras(e)
+  const marco = hayMontosReales(e)
   const tabla = tablaValida(e.tabla) ? e.tabla : null
   const grafica = graficaValida(e.grafica) ? e.grafica : null
-  return (
-    <div className="min-w-0 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
-      <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
-        Escenario estimado
-      </span>
-      <div className="mt-2">
-        <MarkdownRenderer content={e.escenario} className="text-sm" />
-      </div>
+  const cambio = cambioRelevante(e.cambio_vs_analisis)
+  const supuestos = marco ? (e.supuestos_aplicados || []).filter(s => String(s).trim()) : []
+  const sigue = (e.sigue_sin_saberse || []).filter(s => String(s).trim())
+  const nota = marco ? (e.nota || '').trim() : ''
+
+  const body = (
+    <>
+      <MarkdownRenderer content={e.escenario} className="text-sm" />
       <ChatMedia tabla={tabla} grafica={grafica} />
       {e.recomendacion && (
         <div className="mt-3 rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm">
           💡 {e.recomendacion}
         </div>
       )}
-      {showMontos && (
-        <p className="mt-2 text-sm text-slate-800 dark:text-slate-100">
-          Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
-        </p>
-      )}
-      {(e.supuestos_aplicados?.length ?? 0) > 0 && (
+    </>
+  )
+
+  if (!marco) {
+    return (
+      <div className="min-w-0">
+        {body}
+        {sigue.length > 0 && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            Sigue sin saberse: {sigue.join('; ')}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-0 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
+      <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
+        Escenario estimado
+      </span>
+      <div className="mt-2">{body}</div>
+      <p className="mt-2 text-sm text-slate-800 dark:text-slate-100">
+        Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
+      </p>
+      {supuestos.length > 0 && (
         <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
-          Asumiendo: {e.supuestos_aplicados.join('; ')}.
+          Asumiendo: {supuestos.join('; ')}.
         </p>
       )}
-      {e.nota && <MarkdownRenderer content={e.nota} className="mt-2 text-[11px] text-[var(--text-secondary)]" />}
-      {(e.cambio_vs_analisis || (e.sigue_sin_saberse?.length ?? 0) > 0) && (
+      {nota && <MarkdownRenderer content={nota} className="mt-2 text-[11px] text-[var(--text-secondary)]" />}
+      {(cambio || sigue.length > 0) && (
         <p className="mt-1 text-[11px] text-slate-500">
-          {e.cambio_vs_analisis ? `Cambió vs análisis: ${e.cambio_vs_analisis}` : null}
-          {(e.sigue_sin_saberse?.length ?? 0) > 0 && (
-            <>{e.cambio_vs_analisis ? ' · ' : ''}Sigue sin saberse: {e.sigue_sin_saberse.join('; ')}</>
+          {cambio ? `Cambió vs análisis: ${cambio}` : null}
+          {sigue.length > 0 && (
+            <>{cambio ? ' · ' : ''}Sigue sin saberse: {sigue.join('; ')}</>
           )}
         </p>
       )}
@@ -718,7 +866,7 @@ function hydrateMsgs(parsed: unknown): EscenaMsg[] {
     if (!m || typeof m !== 'object') return null
     const row = m as EscenaMsg
     if (row.escenario) row.escenario = hydrateEscenario(row.escenario)
-    return row
+    return persistMsg(row)
   }).filter((m): m is EscenaMsg => Boolean(m && (m.role === 'user' || m.role === 'bot')))
 }
 
@@ -767,7 +915,11 @@ function ChatEscenarios({
   useEffect(() => {
     if (!ready || skipPersist) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-20)))
+      const toSave = messages
+        .filter(m => !(m.role === 'bot' && m.streaming && !m.escenario))
+        .map(persistMsg)
+        .slice(-20)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
     } catch { /* quota */ }
   }, [messages, ready, STORAGE_KEY, skipPersist])
 
@@ -793,6 +945,12 @@ function ChatEscenarios({
     }
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+    try { sessionStorage.setItem('seace-chat-fab-seen', '1') } catch { /* */ }
+    setHintFab(false)
+  }, [open])
+
   function markFabSeen() {
     try { sessionStorage.setItem('seace-chat-fab-seen', '1') } catch { /* */ }
     setHintFab(false)
@@ -809,95 +967,155 @@ function ChatEscenarios({
     setSkipPersist(false)
     const history = buildEscenaHistory(messages)
     setInput('')
-    setMessages(m => [...m, { role: 'user', text: q }, { role: 'bot', text: '' }])
+    setMessages(m => [
+      ...m,
+      { role: 'user', text: q },
+      {
+        role: 'bot',
+        text: '',
+        streaming: true,
+        progress: true,
+        phase: 'clasificar',
+        streamText: '',
+      },
+    ])
     setLoading(true)
+
+    const patchBot = (upd: Partial<EscenaMsg> | ((prev: EscenaMsg) => EscenaMsg)) => {
+      setMessages(m => {
+        const next = [...m]
+        const last = next[next.length - 1]
+        if (!last || last.role !== 'bot') return m
+        next[next.length - 1] = typeof upd === 'function' ? upd(last) : { ...last, ...upd }
+        return next
+      })
+    }
+
+    const failBot = (text: string, extra: Partial<EscenaMsg> = {}) => {
+      patchBot({
+        role: 'bot',
+        text,
+        streaming: false,
+        progress: false,
+        streamText: '',
+        escenario: null,
+        ...extra,
+      })
+    }
+
     try {
       const res = await fetch(`${AI_PROXY}/cotizar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
           ...(contratoId ? { 'X-Contrato-Id': String(contratoId) } : {}),
         },
         body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
       })
-      const payload = await (async () => {
-        try {
-          return await res.json() as {
-            escenario?: EscenarioPayload
-            status?: string
-            mensaje?: string
-            error?: string
-            respuesta?: string
-          }
-        } catch {
-          return {} as {
-            escenario?: EscenarioPayload
-            status?: string
-            mensaje?: string
-            error?: string
-            respuesta?: string
-          }
-        }
-      })()
-      if (res.status === 502) {
-        setMessages(m => {
-          const next = [...m]
-          next[next.length - 1] = {
-            role: 'bot',
+      const ct = res.headers.get('content-type') || ''
+      const isSse = ct.includes('text/event-stream')
+
+      type CotizarJson = {
+        escenario?: EscenarioPayload
+        status?: string
+        mensaje?: string
+        error?: string
+        respuesta?: string
+      }
+
+      const applyJson = (payload: CotizarJson) => {
+        if (res.status === 502) {
+          failBot('El servicio no respondió correctamente. Podés reintentar la misma pregunta.', {
             type: 'error',
             error: true,
             query: q,
-            text: 'El servicio no respondió correctamente. Podés reintentar la misma pregunta.',
-          }
-          return next
-        })
-        return
-      }
-      if (res.status === 409 && payload.status === 'sin_analisis') {
-        setSkipPersist(true)
-        try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
-        setMessages(m => {
-          const next = [...m]
-          next[next.length - 1] = {
-            role: 'bot',
-            text: payload.mensaje || 'Analizá el contrato primero. Recargá esta página y esperá a que termine el análisis.',
-            aviso: true,
-          }
-          return next
-        })
-        return
-      }
-      if (res.status === 429 || res.status === 503
-        || payload.error === 'rate_limited'
-        || payload.error === 'daily_limited'
-        || payload.error === 'over_capacity') {
-        setMessages(m => {
-          const next = [...m]
-          next[next.length - 1] = {
-            role: 'bot',
-            text: payload.respuesta || payload.mensaje
+          })
+          return
+        }
+        if (res.status === 409 && payload.status === 'sin_analisis') {
+          setSkipPersist(true)
+          try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
+          failBot(
+            payload.mensaje || 'Analizá el contrato primero. Recargá esta página y esperá a que termine el análisis.',
+            { aviso: true },
+          )
+          return
+        }
+        if (res.status === 429 || res.status === 503
+          || payload.error === 'rate_limited'
+          || payload.error === 'daily_limited'
+          || payload.error === 'over_capacity') {
+          failBot(
+            payload.respuesta || payload.mensaje
               || (res.status === 503
                 ? 'Hay alta demanda en el asistente. Intenta más tarde.'
                 : 'Has hecho demasiadas consultas. Espera un minuto e intenta de nuevo.'),
-            limit: true,
-          }
-          return next
+            { limit: true },
+          )
+          return
+        }
+        if (!res.ok || !payload.escenario) {
+          throw new Error(payload.respuesta || payload.error || `HTTP ${res.status}`)
+        }
+        const e = hydrateEscenario(payload.escenario) ?? payload.escenario
+        patchBot({
+          streaming: false,
+          progress: true,
+          text: botHistoryText(e),
+          escenario: e,
+          streamText: e.escenario,
         })
+      }
+
+      if (!isSse || !res.ok) {
+        let payload: CotizarJson = {}
+        try {
+          payload = await res.json() as CotizarJson
+        } catch {
+          payload = {}
+        }
+        applyJson(payload)
         return
       }
-      if (!res.ok || !payload.escenario) {
-        throw new Error(payload.respuesta || payload.error || `HTTP ${res.status}`)
-      }
-      const e = payload.escenario
-      setMessages(m => {
-        const next = [...m]
-        next[next.length - 1] = {
-          role: 'bot',
-          text: botHistoryText(e),
-          escenario: hydrateEscenario(e) ?? e,
+
+      let gotData = false
+      let streamErr: string | null = null
+      await readSseEvents(res, (ev) => {
+        if (ev.type === 'phase') {
+          const phase = ev.phase === 'contexto' || ev.phase === 'redactar' || ev.phase === 'clasificar'
+            ? ev.phase
+            : 'clasificar'
+          patchBot({ phase })
+          return
         }
-        return next
+        if (ev.type === 'text' && ev.token) {
+          patchBot(prev => ({
+            ...prev,
+            streamText: (prev.streamText || '') + ev.token,
+          }))
+          return
+        }
+        if (ev.type === 'data' && ev.escenario) {
+          gotData = true
+          const e = hydrateEscenario(ev.escenario) ?? ev.escenario
+          patchBot({
+            streaming: false,
+            progress: true,
+            text: botHistoryText(e),
+            escenario: e,
+            streamText: e.escenario,
+          })
+          return
+        }
+        if (ev.type === 'error') {
+          streamErr = ev.message && /gemini|HTTP 5\d\d/i.test(ev.message)
+            ? 'El servicio no respondió correctamente. Podés reintentar la misma pregunta.'
+            : (ev.message || 'No pude recalcular el escenario')
+        }
       })
+      if (streamErr) throw new Error(streamErr)
+      if (!gotData) throw new Error('respuesta incompleta')
     } catch (err) {
       setMessages(m => {
         const next = [...m]
@@ -931,7 +1149,7 @@ function ChatEscenarios({
       )}
 
       <aside
-        className={`fixed top-14 right-0 z-40 flex h-[calc(100dvh-3.5rem)] w-full flex-col border-l border-[var(--border)] bg-[var(--bg-card)] shadow-[-8px_0_24px_rgba(0,0,0,0.12)] transition-transform duration-[250ms] ease-out md:w-[380px] ${
+        className={`fixed top-14 right-0 z-40 flex h-[calc(100dvh-3.5rem)] w-full flex-col border-l border-[var(--border)] bg-[var(--bg-card)] shadow-[-8px_0_24px_rgba(0,0,0,0.12)] transition-transform duration-[250ms] ease-out lg:w-[380px] ${
           open ? 'translate-x-0' : 'pointer-events-none translate-x-full'
         }`}
         aria-hidden={!open}
@@ -945,17 +1163,21 @@ function ChatEscenarios({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar asistente"
-            className="rounded-md p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+            aria-label="Colapsar asistente"
+            className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4 lg:hidden" />
+            <span className="hidden items-center gap-0.5 text-xs font-medium lg:inline-flex">
+              Colapsar
+              <ChevronRight className="h-4 w-4" />
+            </span>
           </button>
         </header>
 
         <div ref={listRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
           {showChips && (
             <p className="mb-3 text-[12px] text-[var(--text-secondary)]">
-              Preguntá sobre este contrato. El análisis de la página no cambia. El número final lo pone ENERTRONIC.
+              Preguntá sobre este contrato. El análisis de la página no cambia.
             </p>
           )}
           <div className="space-y-3">
@@ -985,10 +1207,20 @@ function ChatEscenarios({
                         </button>
                       )}
                     </div>
-                  ) : m.escenario ? (
-                    <EscenarioCard e={m.escenario} />
                   ) : (
-                    <p className="text-xs text-slate-500">{loading && i === messages.length - 1 ? 'Recalculando escenario…' : m.text}</p>
+                    <div className="min-w-0">
+                      {m.progress && (
+                        <AnalizandoBlock
+                          phase={m.phase}
+                          collapsed={Boolean(m.streamText || m.escenario)}
+                        />
+                      )}
+                      {m.escenario ? (
+                        <EscenarioCard e={m.escenario} />
+                      ) : m.streamText ? (
+                        <MarkdownRenderer content={m.streamText} className="text-sm" />
+                      ) : null}
+                    </div>
                   )}
                 </div>
               </div>
