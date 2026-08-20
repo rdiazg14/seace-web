@@ -59,7 +59,7 @@ export default function OportunidadCard({
 
   return (
     <article
-      className={`rounded-xl border bg-white p-3.5 shadow-sm dark:bg-slate-900 ${
+      className={`rounded-xl border bg-[var(--bg-card)] p-3.5 shadow-sm ${
         cerradoEval
           ? 'border-amber-500/40 dark:border-amber-500/30'
           : o.urgente

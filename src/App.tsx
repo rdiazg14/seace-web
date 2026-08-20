@@ -16,7 +16,7 @@ function Shell() {
   const { pathname } = useLocation()
   const login = pathname === '/login'
   return (
-    <div className="min-h-dvh bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-dvh bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {!login && <Navbar />}
       <Routes>
         <Route path="/login" element={<Login />} />

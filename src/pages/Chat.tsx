@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AI_PROXY, supabase } from '../lib/supabase'
 import type { Contrato, ContratoRef } from '../types'
 import { EstadoPill } from '../components/Pills'
+import { MarkdownRenderer } from '../components/MarkdownRenderer'
 
 const SUGERENCIAS = [
   'ciberseguridad',
@@ -20,27 +21,6 @@ interface Msg {
   limit?: boolean
   stage?: string
   query?: string
-}
-
-function RichText({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div className="space-y-1.5 text-sm leading-relaxed">
-      {lines.map((line, i) => {
-        const parts = line.split(/(\*\*[^*]+\*\*)/g)
-        const nodes = parts.map((p, j) =>
-          p.startsWith('**') && p.endsWith('**')
-            ? <strong key={j} className="font-medium">{p.slice(2, -2)}</strong>
-            : <span key={j}>{p}</span>,
-        )
-        const t = line.trim()
-        if (t.startsWith('- ') || t.startsWith('* ') || /^\d+\.\s/.test(t)) {
-          return <div key={i} className="flex gap-2 pl-1"><span className="text-teal-500">•</span><span>{nodes}</span></div>
-        }
-        return <p key={i}>{nodes}</p>
-      })}
-    </div>
-  )
 }
 
 function TypingDots() {
@@ -142,6 +122,9 @@ function mensajeLimite(status: number, data: { respuesta?: string; response?: st
   }
   if (status === 503 || data.error === 'over_capacity') {
     return 'Hay alta demanda en el asistente. Intenta más tarde.'
+  }
+  if (status === 502) {
+    return 'El servicio no respondió correctamente. Podés reintentar la misma pregunta.'
   }
   return 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.'
 }
@@ -321,7 +304,7 @@ export default function Chat() {
                     ? 'rounded-bl-sm border border-amber-500/40 bg-amber-500/10'
                     : m.error
                       ? 'rounded-bl-sm border border-red-500/30 bg-red-500/10'
-                      : 'rounded-bl-sm border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                      : 'rounded-bl-sm border border-[var(--border)] bg-[var(--bg-card)]'
               }`}
               >
                 {m.role === 'bot' && m.stage && (
@@ -332,7 +315,7 @@ export default function Chat() {
                 )}
                 {m.role === 'bot'
                   ? (m.text
-                    ? <RichText text={m.text} />
+                    ? <MarkdownRenderer content={m.text} className="text-sm" />
                     : streaming && i === messages.length - 1
                       ? <p className="text-xs text-slate-500">Esto puede tardar unos 10 segundos…</p>
                       : null)
@@ -409,7 +392,7 @@ export default function Chat() {
           onChange={e => setInput(e.target.value)}
           disabled={loading}
           placeholder="Pregunta sobre TDR, specs, plazos…"
-          className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-teal-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
+          className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
         />
         {loading ? (
           <button

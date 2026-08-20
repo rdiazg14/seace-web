@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { Moon, Sun } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
@@ -43,42 +44,42 @@ export default function Login() {
           aria-label="Cambiar tema"
           className="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
         >
-          {theme === 'dark' ? 'Claro' : 'Oscuro'}
+            {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
         </button>
       </div>
 
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        className="w-full max-w-sm space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 shadow-sm"
       >
         <div>
           <p className="text-lg font-medium tracking-tight text-teal-600 dark:text-teal-400">SEACE Monitor</p>
-          <p className="mt-1 text-sm text-slate-500">Entra con la cuenta que te asignó el admin.</p>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">Entra con la cuenta que te asignó el admin.</p>
         </div>
 
         {error && <ErrorBox>{error}</ErrorBox>}
 
         <label className="block text-sm">
-          <span className="text-slate-600 dark:text-slate-300">Email</span>
+          <span className="text-[var(--text-secondary)]">Email</span>
           <input
             type="email"
             autoComplete="username"
             required
             value={email}
             onChange={e => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+            className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
           />
         </label>
 
         <label className="block text-sm">
-          <span className="text-slate-600 dark:text-slate-300">Clave</span>
+          <span className="text-[var(--text-secondary)]">Clave</span>
           <input
             type="password"
             autoComplete="current-password"
             required
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+            className="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)]"
           />
         </label>
 
