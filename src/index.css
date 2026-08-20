@@ -15,6 +15,12 @@
   --tl-soporte: #2563eb;
   --tl-axis: #a1a1aa;
   --tl-critico: #dc2626;
+  --chart-1: #047857;
+  --chart-2: #6d28d9;
+  --chart-3: #1d4ed8;
+  --chart-4: #b45309;
+  --chart-5: #b91c1c;
+  --chart-6: #0e7490;
 }
 
 .dark {
@@ -30,6 +36,12 @@
   --tl-soporte: #60a5fa;
   --tl-axis: #71717a;
   --tl-critico: #f87171;
+  --chart-1: #5eead4;
+  --chart-2: #c4b5fd;
+  --chart-3: #93c5fd;
+  --chart-4: #e8c872;
+  --chart-5: #fca5a5;
+  --chart-6: #7dd3fc;
 }
 
 html,
