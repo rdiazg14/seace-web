@@ -34,11 +34,11 @@ export function ChatChart({ grafica }: { grafica: ChatGrafica }) {
       {grafica.titulo && (
         <p className="mb-1.5 text-[11px] font-medium text-[var(--text-secondary)]">{grafica.titulo}</p>
       )}
-      <div className="h-[220px] w-full">
-        <ResponsiveContainer width="100%" height={220}>
+      <div className="h-[200px] w-full min-w-0">
+        <ResponsiveContainer width="100%" height={200}>
           {tipo === 'pie' ? (
             <PieChart>
-              <Pie data={data} dataKey="valor" nameKey="name" innerRadius={45} outerRadius={80}>
+              <Pie data={data} dataKey="valor" nameKey="name" innerRadius={36} outerRadius={64}>
                 {data.map((_, i) => (
                   <Cell key={i} fill={colors[i % colors.length]} />
                 ))}
@@ -49,18 +49,18 @@ export function ChatChart({ grafica }: { grafica: ChatGrafica }) {
               />
             </PieChart>
           ) : tipo === 'lineas' ? (
-            <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+            <LineChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 28 }}>
               <CartesianGrid stroke={grid} vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: axis, fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fill: axis, fontSize: 10 }} width={48} />
+              <XAxis dataKey="name" tick={{ fill: axis, fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={48} tickFormatter={v => String(v).slice(0, 12)} />
+              <YAxis tick={{ fill: axis, fontSize: 9 }} width={36} />
               <Tooltip contentStyle={tip} formatter={(v) => [fmt(Number(v ?? 0), unidad), unidad || 'valor']} />
               <Line type="monotone" dataKey="valor" stroke={colors[0]} strokeWidth={2} dot />
             </LineChart>
           ) : (
-            <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+            <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 28 }}>
               <CartesianGrid stroke={grid} vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: axis, fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fill: axis, fontSize: 10 }} width={48} />
+              <XAxis dataKey="name" tick={{ fill: axis, fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={48} tickFormatter={v => String(v).slice(0, 12)} />
+              <YAxis tick={{ fill: axis, fontSize: 9 }} width={36} />
               <Tooltip contentStyle={tip} formatter={(v) => [fmt(Number(v ?? 0), unidad), unidad || 'valor']} />
               <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
                 {data.map((_, i) => (

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
@@ -215,15 +215,33 @@ function CondCard({
   )
 }
 
+const CHAT_PANEL_W = 380
+
+function useDesktop(): boolean {
+  const [desktop, setDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const apply = () => setDesktop(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+  return desktop
+}
+
 export default function AnalisisContrato() {
   const { id } = useParams()
   const contratoId = Number(id)
+  const desktop = useDesktop()
   const [ficha, setFicha] = useState<Contrato | null>(null)
   const [data, setData] = useState<AnalisisResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [error502, setError502] = useState(false)
   const [sinTdr, setSinTdr] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     const ac = new AbortController()
@@ -289,10 +307,20 @@ export default function AnalisisContrato() {
     return () => { ac.abort() }
   }, [contratoId])
 
+  useEffect(() => {
+    setChatOpen(false)
+  }, [contratoId])
+
   const a = data?.analisis
   const cierre = cierraEn(ficha?.fecha_fin_cotizacion ?? null)
 
+  const nro = ficha ? nroContrato(ficha) : (data?.nro || `Contrato ${id}`)
+
   return (
+    <div
+      className="transition-[margin-right] duration-[250ms] ease-out"
+      style={{ marginRight: chatOpen && desktop ? CHAT_PANEL_W : 0 }}
+    >
     <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link to="/ruta-dia" className="text-xs font-medium text-teal-600 dark:text-teal-400">
@@ -517,15 +545,26 @@ export default function AnalisisContrato() {
             </section>
           )}
 
-          <section className="rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-            <p className="text-sm font-medium">Chat de escenarios</p>
-            <p className="mt-1 text-[12px] text-slate-500">
-              El análisis de arriba no cambia. Acá se recalcula un escenario con supuestos explícitos.
-              El número final lo pone ENERTRONIC.
-            </p>
-            <ChatEscenarios contratoId={contratoId} chipsIniciales={a.chips_sugeridos ?? undefined} />
-          </section>
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="w-full rounded-xl border border-dashed border-slate-300 px-3 py-3 text-left text-sm text-[var(--text-secondary)] hover:border-teal-400 dark:border-slate-700"
+          >
+            ¿Dudas sobre este contrato? Abre el asistente →
+          </button>
         </>
+      )}
+    </div>
+      {a && Number.isFinite(contratoId) && contratoId > 0 && (
+        <ChatEscenarios
+          key={contratoId}
+          contratoId={contratoId}
+          nro={nro}
+          chipsIniciales={a.chips_sugeridos ?? undefined}
+          open={chatOpen}
+          onOpen={() => setChatOpen(true)}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   )
@@ -619,7 +658,7 @@ function EscenarioCard({ e }: { e: EscenarioPayload }) {
   const tabla = tablaValida(e.tabla) ? e.tabla : null
   const grafica = graficaValida(e.grafica) ? e.grafica : null
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
+    <div className="min-w-0 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
       <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
         Escenario estimado
       </span>
@@ -683,31 +722,47 @@ function hydrateMsgs(parsed: unknown): EscenaMsg[] {
   }).filter((m): m is EscenaMsg => Boolean(m && (m.role === 'user' || m.role === 'bot')))
 }
 
-function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; chipsIniciales?: string[] }) {
+function ChatEscenarios({
+  contratoId,
+  nro,
+  chipsIniciales,
+  open,
+  onOpen,
+  onClose,
+}: {
+  contratoId: number
+  nro: string
+  chipsIniciales?: string[]
+  open: boolean
+  onOpen: () => void
+  onClose: () => void
+}) {
   const STORAGE_KEY = `chat_escenarios_${contratoId}`
   const [messages, setMessages] = useState<EscenaMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(false)
   const [skipPersist, setSkipPersist] = useState(false)
+  const [hintFab, setHintFab] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const chips = (chipsIniciales && chipsIniciales.length > 0)
     ? chipsIniciales.map(c => c.trim()).filter(Boolean).map(c => c.slice(0, 40))
     : CHIPS_ESCENARIO
   const showChips = !loading && messages.length === 0
 
   useEffect(() => {
+    setReady(false)
+    setSkipPersist(false)
+    setInput('')
+    setLoading(false)
     try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-        if (saved) {
-          setMessages(hydrateMsgs(JSON.parse(saved)))
-        } else {
-          setMessages([])
-        }
+      const saved = localStorage.getItem(`chat_escenarios_${contratoId}`)
+      setMessages(saved ? hydrateMsgs(JSON.parse(saved)) : [])
     } catch {
       setMessages([])
     }
     setReady(true)
-  }, [STORAGE_KEY])
+  }, [contratoId])
 
   useEffect(() => {
     if (!ready || skipPersist) return
@@ -715,6 +770,33 @@ function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; ch
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-20)))
     } catch { /* quota */ }
   }, [messages, ready, STORAGE_KEY, skipPersist])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  useEffect(() => {
+    if (!open) return
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, loading, open])
+
+  useEffect(() => {
+    try {
+      setHintFab(!sessionStorage.getItem('seace-chat-fab-seen'))
+    } catch {
+      setHintFab(true)
+    }
+  }, [])
+
+  function markFabSeen() {
+    try { sessionStorage.setItem('seace-chat-fab-seen', '1') } catch { /* */ }
+    setHintFab(false)
+  }
 
   function nuevaConsulta() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
@@ -809,7 +891,7 @@ function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; ch
       const e = payload.escenario
       setMessages(m => {
         const next = [...m]
-          next[next.length - 1] = {
+        next[next.length - 1] = {
           role: 'bot',
           text: botHistoryText(e),
           escenario: hydrateEscenario(e) ?? e,
@@ -834,88 +916,134 @@ function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; ch
   }
 
   return (
-    <div className="mt-3 space-y-3">
-      {messages.map((m, i) => (
-        <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-          <div className={`max-w-[92%] ${m.role === 'user' ? '' : 'w-full'}`}>
-            {m.role === 'user' ? (
-              <p className="rounded-2xl rounded-br-sm bg-teal-500 px-3.5 py-2.5 text-sm text-white">{m.text}</p>
-            ) : m.aviso ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                {m.text}
-              </div>
-            ) : m.limit ? (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                {m.text}
-              </div>
-            ) : m.error ? (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
-                <p>{m.text}</p>
-                {m.query && (
-                  <button
-                    type="button"
-                    onClick={() => void enviar(m.query)}
-                    className="mt-2 text-xs font-medium text-teal-600 dark:text-teal-400"
-                  >
-                    Reintentar
-                  </button>
-                )}
-              </div>
-            ) : m.escenario ? (
-              <EscenarioCard e={m.escenario} />
-            ) : (
-              <p className="text-xs text-slate-500">{loading && i === messages.length - 1 ? 'Recalculando escenario…' : m.text}</p>
-            )}
-          </div>
-        </div>
-      ))}
-
-      {showChips && (
-        <div className="flex flex-wrap items-center gap-2">
-          {chips.map(s => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => void enviar(s)}
-              className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-teal-400"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+    <>
+      {!open && (
+        <button
+          type="button"
+          onClick={() => { markFabSeen(); onOpen() }}
+          aria-label="Abrir asistente del contrato"
+          className={`fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-teal-500 text-white shadow-lg hover:bg-teal-400 ${
+            hintFab ? 'animate-pulse' : ''
+          }`}
+        >
+          <MessageCircle className="h-6 w-6" />
+        </button>
       )}
-      {!loading && messages.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+
+      <aside
+        className={`fixed top-14 right-0 z-40 flex h-[calc(100dvh-3.5rem)] w-full flex-col border-l border-[var(--border)] bg-[var(--bg-card)] shadow-[-8px_0_24px_rgba(0,0,0,0.12)] transition-transform duration-[250ms] ease-out md:w-[380px] ${
+          open ? 'translate-x-0' : 'pointer-events-none translate-x-full'
+        }`}
+        aria-hidden={!open}
+        aria-label="Asistente del contrato"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-2 border-b border-[var(--border)] px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[var(--text-primary)]">Asistente</p>
+            <p className="truncate text-[11px] text-[var(--text-secondary)]">{nro}</p>
+          </div>
           <button
             type="button"
-            onClick={nuevaConsulta}
-            className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-red-300"
+            onClick={onClose}
+            aria-label="Cerrar asistente"
+            className="rounded-md p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
           >
-            Nueva consulta
+            <X className="h-5 w-5" />
           </button>
-        </div>
-      )}
+        </header>
 
-      <form
-        className="flex gap-2"
-        onSubmit={e => { e.preventDefault(); void enviar() }}
-      >
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          disabled={loading}
-          placeholder="¿Y si…? (el análisis de arriba no cambia)"
-          className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || loading}
-          className="rounded-xl bg-teal-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          Enviar
-        </button>
-      </form>
-    </div>
+        <div ref={listRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
+          {showChips && (
+            <p className="mb-3 text-[12px] text-[var(--text-secondary)]">
+              Preguntá sobre este contrato. El análisis de la página no cambia. El número final lo pone ENERTRONIC.
+            </p>
+          )}
+          <div className="space-y-3">
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`min-w-0 max-w-[92%] ${m.role === 'user' ? '' : 'w-full'}`}>
+                  {m.role === 'user' ? (
+                    <p className="rounded-2xl rounded-br-sm bg-teal-500 px-3.5 py-2.5 text-sm text-white">{m.text}</p>
+                  ) : m.aviso ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                      {m.text}
+                    </div>
+                  ) : m.limit ? (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                      {m.text}
+                    </div>
+                  ) : m.error ? (
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
+                      <p>{m.text}</p>
+                      {m.query && (
+                        <button
+                          type="button"
+                          onClick={() => void enviar(m.query)}
+                          className="mt-2 text-xs font-medium text-teal-600 dark:text-teal-400"
+                        >
+                          Reintentar
+                        </button>
+                      )}
+                    </div>
+                  ) : m.escenario ? (
+                    <EscenarioCard e={m.escenario} />
+                  ) : (
+                    <p className="text-xs text-slate-500">{loading && i === messages.length - 1 ? 'Recalculando escenario…' : m.text}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <footer className="shrink-0 border-t border-[var(--border)] bg-[var(--bg-card)] px-3 py-2.5">
+          {showChips && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {chips.map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => void enviar(s)}
+                  className="rounded-full border border-[var(--border)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:border-teal-400"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {!loading && messages.length > 0 && (
+            <div className="mb-2">
+              <button
+                type="button"
+                onClick={nuevaConsulta}
+                className="rounded-full border border-[var(--border)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:border-red-300"
+              >
+                Nueva consulta
+              </button>
+            </div>
+          )}
+          <form
+            className="flex gap-2"
+            onSubmit={e => { e.preventDefault(); void enviar() }}
+          >
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              disabled={loading}
+              placeholder="¿Y si…?"
+              className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || loading}
+              className="shrink-0 rounded-xl bg-teal-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            >
+              Enviar
+            </button>
+          </form>
+        </footer>
+      </aside>
+    </>
   )
 }
 
