@@ -92,6 +92,7 @@ export interface AnalisisPayload {
   componentes_servicio?: ComponenteServicio[] | null
   requisitos_proveedor?: RequisitosProveedor | null
   riesgos_contractuales?: RiesgosContractuales | null
+  chips_sugeridos?: string[] | null
 }
 
 export interface AnalisisResponse {

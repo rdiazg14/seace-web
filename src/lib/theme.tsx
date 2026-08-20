@@ -5,9 +5,10 @@ export type Theme = 'dark' | 'light'
 interface ThemeCtx {
   theme: Theme
   toggle: () => void
+  isDark: boolean
 }
 
-const Ctx = createContext<ThemeCtx>({ theme: 'dark', toggle: () => undefined })
+const Ctx = createContext<ThemeCtx>({ theme: 'dark', toggle: () => undefined, isDark: true })
 
 function readInitial(): Theme {
   try {
@@ -33,7 +34,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme])
 
   return (
-    <Ctx.Provider value={{ theme, toggle: () => setTheme(t => (t === 'dark' ? 'light' : 'dark')) }}>
+    <Ctx.Provider value={{ theme, toggle: () => setTheme(t => (t === 'dark' ? 'light' : 'dark')), isDark: theme === 'dark' }}>
       {children}
     </Ctx.Provider>
   )

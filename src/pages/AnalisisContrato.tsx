@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { AlertCircle } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
@@ -21,6 +22,7 @@ import {
 } from '../lib/analisis'
 import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
 import { ErrorBox, Skeleton } from '../components/ui'
+import { MarkdownRenderer } from '../components/MarkdownRenderer'
 
 function tonoCls(t: TonoCond): string {
   if (t === 'ok') return 'border-emerald-500/40 bg-emerald-500/10'
@@ -49,7 +51,7 @@ function labelPlazoRef(r?: EntregableContractual['plazo_referencia']): string {
 
 function ComponenteCard({ c }: { c: ComponenteServicio }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
       <p className="text-sm font-medium">{c.nombre}</p>
       <p className="mt-1 text-[12px] text-slate-500">
         {c.participantes_max != null && <>Hasta {c.participantes_max} participantes</>}
@@ -222,6 +224,7 @@ export default function AnalisisContrato() {
   const [data, setData] = useState<AnalisisResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [error502, setError502] = useState(false)
   const [sinTdr, setSinTdr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -234,6 +237,7 @@ export default function AnalisisContrato() {
       }
       setLoading(true)
       setError(null)
+      setError502(false)
       setSinTdr(null)
       setData(null)
       try {
@@ -253,6 +257,11 @@ export default function AnalisisContrato() {
           body: JSON.stringify({ contrato_id: contratoId }),
           signal: ac.signal,
         })
+        if (res.status === 502) {
+          if (ac.signal.aborted) return
+          setError502(true)
+          return
+        }
         const payload = await res.json() as AnalisisResponse & {
           error?: string
           respuesta?: string
@@ -286,7 +295,7 @@ export default function AnalisisContrato() {
   const cierre = cierraEn(ficha?.fecha_fin_cotizacion ?? null)
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4">
+    <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link to="/ruta-dia" className="text-xs font-medium text-teal-600 dark:text-teal-400">
           ← Ruta del día
@@ -305,7 +314,7 @@ export default function AnalisisContrato() {
 
       <header>
         <p className="text-[11px] uppercase tracking-wide text-slate-400">Análisis de contrato</p>
-        <h1 className="mt-0.5 text-xl text-slate-900 sm:text-2xl dark:text-slate-50">
+        <h1 className="mt-0.5 text-xl text-[var(--text-primary)] sm:text-2xl">
           {ficha ? nroContrato(ficha) : `Contrato ${id}`}
         </h1>
         {ficha && (
@@ -339,11 +348,32 @@ export default function AnalisisContrato() {
         </div>
       )}
 
+      {error502 && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+            <div>
+              <p>El análisis no pudo completarse en este momento.</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                El servicio de IA no respondió correctamente. Suele resolverse en segundos.
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-3 rounded-lg bg-teal-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-400"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <ErrorBox retry={() => window.location.reload()}>{error}</ErrorBox>
       )}
 
-      {loading && (
+      {loading && !error502 && (
         <div className="space-y-3">
           <Skeleton className="h-24" />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -355,7 +385,7 @@ export default function AnalisisContrato() {
 
       {a && data && (
         <>
-          <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+          <p className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-[11px] text-[var(--text-secondary)]">
             Guía para decidir, no una cotización. Techo 8 UIT = {soles(data.techo_soles)}.
             TDR: {data.tdr_fuente === 'ficha' ? 'sin texto extraído (solo ficha)' : `${data.tdr_fuente} · ${data.tdr_chars.toLocaleString('es-PE')} chars`}.
             El número final lo pone ENERTRONIC.
@@ -385,7 +415,7 @@ export default function AnalisisContrato() {
           )}
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-[11px] text-slate-500">Encaje</p>
               <p className="mt-1 text-sm font-medium">
                 {labelRubro(a.encaje.rubro)} · {labelCalifica(a.encaje.califica)}
@@ -396,7 +426,7 @@ export default function AnalisisContrato() {
                 <RequisitosBlock r={a.requisitos_proveedor} />
               )}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-[11px] text-slate-500">Economía (estimaciones)</p>
               <p className="mt-1 text-sm">Valor est. {soles(a.economia.valor_estimado_soles)}</p>
               <p className="text-sm">Costo est. {soles(a.economia.costo_estimado_soles)}</p>
@@ -443,7 +473,7 @@ export default function AnalisisContrato() {
           )}
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-sm font-medium">Supuestos (explícitos)</p>
               <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-slate-600 dark:text-slate-300">
                 {(a.economia.supuestos || []).map((s, i) => <li key={i}>{s}</li>)}
@@ -458,7 +488,7 @@ export default function AnalisisContrato() {
           </section>
 
           {(a.optimizacion || []).length > 0 && (
-            <section className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-sm font-medium">Cómo mejorar el margen</p>
               <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-600 dark:text-slate-300">
                 {a.optimizacion.map((s, i) => <li key={i}>{s}</li>)}
@@ -472,7 +502,7 @@ export default function AnalisisContrato() {
               El análisis de arriba no cambia. Acá se recalcula un escenario con supuestos explícitos.
               El número final lo pone ENERTRONIC.
             </p>
-            <ChatEscenarios contratoId={contratoId} />
+            <ChatEscenarios contratoId={contratoId} chipsIniciales={a.chips_sugeridos ?? undefined} />
           </section>
         </>
       )}
@@ -492,10 +522,12 @@ const HISTORY_MAX_CHARS = 500
 interface EscenaMsg {
   role: 'user' | 'bot'
   text: string
+  type?: 'error'
   escenario?: EscenarioPayload | null
   error?: boolean
   limit?: boolean
   aviso?: boolean
+  query?: string
 }
 
 function buildEscenaHistory(messages: EscenaMsg[]): { role: 'user' | 'bot'; text: string }[] {
@@ -518,19 +550,22 @@ function botHistoryText(e: EscenarioPayload): string {
 function EscenarioCard({ e }: { e: EscenarioPayload }) {
   const show = escenarioMuestraCifras(e)
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
       <span className="rounded-full bg-teal-500/15 px-2 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-300">
         Escenario estimado
       </span>
-      <p className="mt-2 text-sm font-medium">{e.escenario}</p>
+      <div className="mt-2">
+        <MarkdownRenderer content={e.escenario} className="text-sm font-medium" />
+      </div>
       {show ? (
         <>
           <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
             Valor {soles(e.valor_estimado_soles)} · Costo {soles(e.costo_estimado_soles)} · Margen {soles(e.margen_estimado_soles)}
           </p>
           <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">
-            Asumiendo: {e.supuestos_aplicados.join('; ')}. — {e.nota}
+            Asumiendo: {e.supuestos_aplicados.join('; ')}.
           </p>
+          <MarkdownRenderer content={e.nota} className="mt-1 text-sm" />
           <p className="mt-1 text-[11px] text-slate-500">
             Cambió vs análisis: {e.cambio_vs_analisis || '—'}
             {e.sigue_sin_saberse.length > 0 && (
@@ -539,21 +574,28 @@ function EscenarioCard({ e }: { e: EscenarioPayload }) {
           </p>
         </>
       ) : (
-        <p className="mt-2 text-sm text-amber-800 dark:text-amber-200">
-          escenario sin supuestos declarados, no se estima monto
-        </p>
+        <>
+          {e.nota && <MarkdownRenderer content={e.nota} className="mt-2 text-sm" />}
+          <p className="mt-2 text-sm text-amber-800 dark:text-amber-200">
+            escenario sin supuestos declarados, no se estima monto
+          </p>
+        </>
       )}
     </div>
   )
 }
 
-function ChatEscenarios({ contratoId }: { contratoId: number }) {
+function ChatEscenarios({ contratoId, chipsIniciales }: { contratoId: number; chipsIniciales?: string[] }) {
   const STORAGE_KEY = `chat_escenarios_${contratoId}`
   const [messages, setMessages] = useState<EscenaMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [ready, setReady] = useState(false)
   const [skipPersist, setSkipPersist] = useState(false)
+  const chips = (chipsIniciales && chipsIniciales.length > 0)
+    ? chipsIniciales.map(c => c.trim()).filter(Boolean).map(c => c.slice(0, 40))
+    : CHIPS_ESCENARIO
+  const showChips = !loading && messages.length === 0
 
   useEffect(() => {
     try {
@@ -600,12 +642,38 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
         },
         body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
       })
-      const payload = await res.json() as {
-        escenario?: EscenarioPayload
-        status?: string
-        mensaje?: string
-        error?: string
-        respuesta?: string
+      const payload = await (async () => {
+        try {
+          return await res.json() as {
+            escenario?: EscenarioPayload
+            status?: string
+            mensaje?: string
+            error?: string
+            respuesta?: string
+          }
+        } catch {
+          return {} as {
+            escenario?: EscenarioPayload
+            status?: string
+            mensaje?: string
+            error?: string
+            respuesta?: string
+          }
+        }
+      })()
+      if (res.status === 502) {
+        setMessages(m => {
+          const next = [...m]
+          next[next.length - 1] = {
+            role: 'bot',
+            type: 'error',
+            error: true,
+            query: q,
+            text: 'El servicio no respondió correctamente. Podés reintentar la misma pregunta.',
+          }
+          return next
+        })
+        return
       }
       if (res.status === 409 && payload.status === 'sin_analisis') {
         setSkipPersist(true)
@@ -657,6 +725,8 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
         const next = [...m]
         next[next.length - 1] = {
           role: 'bot',
+          type: 'error',
+          query: q,
           text: err instanceof Error ? err.message : 'No pude recalcular el escenario',
           error: true,
         }
@@ -684,7 +754,16 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
               </div>
             ) : m.error ? (
               <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm">
-                {m.text}
+                <p>{m.text}</p>
+                {m.query && (
+                  <button
+                    type="button"
+                    onClick={() => void enviar(m.query)}
+                    className="mt-2 text-xs font-medium text-teal-600 dark:text-teal-400"
+                  >
+                    Reintentar
+                  </button>
+                )}
               </div>
             ) : m.escenario ? (
               <EscenarioCard e={m.escenario} />
@@ -695,27 +774,29 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
         </div>
       ))}
 
-      {!loading && (
+      {showChips && (
         <div className="flex flex-wrap items-center gap-2">
-          {CHIPS_ESCENARIO.map(s => (
+          {chips.map(s => (
             <button
               key={s}
               type="button"
               onClick={() => void enviar(s)}
-              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-teal-400 dark:border-slate-700 dark:text-slate-300"
+              className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-teal-400"
             >
               {s}
             </button>
           ))}
-          {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={nuevaConsulta}
-              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:border-red-300 dark:border-slate-700"
-            >
-              Nueva consulta
-            </button>
-          )}
+        </div>
+      )}
+      {!loading && messages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={nuevaConsulta}
+            className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-red-300"
+          >
+            Nueva consulta
+          </button>
         </div>
       )}
 
@@ -728,7 +809,7 @@ function ChatEscenarios({ contratoId }: { contratoId: number }) {
           onChange={e => setInput(e.target.value)}
           disabled={loading}
           placeholder="¿Y si…? (el análisis de arriba no cambia)"
-          className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
+          className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
         />
         <button
           type="submit"

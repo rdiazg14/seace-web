@@ -121,12 +121,12 @@ export default function RutaDia() {
   const hayMas = filtrado.length > mostrar
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:px-4">
+    <div className="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <header>
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h1 className="text-xl text-slate-900 sm:text-2xl dark:text-slate-50">Ruta del día</h1>
-            <p className="text-sm text-slate-500">
+            <h1 className="text-xl text-[var(--text-primary)] sm:text-2xl">Ruta del día</h1>
+            <p className="text-sm text-[var(--text-secondary)]">
               Brief de oportunidades ENERTRONIC · score preliminar (sin IA)
             </p>
           </div>
@@ -284,10 +284,10 @@ function Kpi({
   warn?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className={`mt-1 text-xl font-medium ${warn ? 'text-red-500' : ''}`}>{value.toLocaleString('es-PE')}</p>
-      <p className="text-[11px] text-slate-400">{hint}</p>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
+      <p className="text-[11px] text-[var(--text-secondary)]">{label}</p>
+      <p className={`mt-1 text-xl font-medium ${warn ? 'text-red-500' : 'text-[var(--text-primary)]'}`}>{value.toLocaleString('es-PE')}</p>
+      <p className="text-[11px] text-[var(--text-secondary)]">{hint}</p>
     </div>
   )
 }
