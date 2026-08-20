@@ -65,15 +65,15 @@ function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
   const consorcio = r.admite_consorcio
   const certs = r.certificaciones_especificas
   return (
-    <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-      <p className="text-[11px] text-slate-500">Requisitos del proveedor</p>
+    <div className="mt-3 border-t border-[var(--border)] pt-3">
+      <p className="text-[11px] text-[var(--text-secondary)]">Requisitos del proveedor</p>
       {(r.habilitaciones?.length ?? 0) > 0 && (
-        <ul className="mt-1 space-y-0.5 text-[12px] text-slate-600 dark:text-slate-300">
+        <ul className="mt-1 space-y-0.5 text-[12px] text-[var(--text-secondary)]">
           {r.habilitaciones!.map((h, i) => <li key={i}>✅ {h}</li>)}
         </ul>
       )}
       {r.experiencia_minima && (
-        <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">✅ {r.experiencia_minima}</p>
+        <p className="mt-1 text-[12px] text-[var(--text-secondary)]">✅ {r.experiencia_minima}</p>
       )}
       {Array.isArray(certs) && certs.length === 0 && (
         <span className="mt-2 inline-block rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -81,7 +81,7 @@ function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
         </span>
       )}
       {(certs?.length ?? 0) > 0 && (
-        <ul className="mt-1 list-disc pl-4 text-[12px] text-slate-600 dark:text-slate-300">
+        <ul className="mt-1 list-disc pl-4 text-[12px] text-[var(--text-secondary)]">
           {certs!.map((c, i) => <li key={i}>{c}</li>)}
         </ul>
       )}
@@ -103,10 +103,10 @@ function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
 function EntregablesTable({ items }: { items: EntregableContractual[] }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium">Entregables</h2>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+      <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Entregables</h2>
+      <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
         <table className="w-full min-w-[520px] text-left text-[12px]">
-          <thead className="bg-slate-50 text-[11px] text-slate-500 dark:bg-slate-900">
+          <thead className="bg-[var(--bg-secondary)] text-[11px] text-[var(--text-secondary)]">
             <tr>
               <th className="px-3 py-2 font-medium">Entregable</th>
               <th className="px-3 py-2 font-medium">Plazo</th>
@@ -116,10 +116,10 @@ function EntregablesTable({ items }: { items: EntregableContractual[] }) {
           </thead>
           <tbody>
             {items.map((e, i) => (
-              <tr key={`${e.nombre}-${i}`} className="border-t border-slate-200 dark:border-slate-800">
+              <tr key={`${e.nombre}-${i}`} className="border-t border-[var(--border)]">
                 <td className="px-3 py-2">
-                  <p className="font-medium text-slate-800 dark:text-slate-100">{e.nombre}</p>
-                  {e.descripcion && <p className="mt-0.5 text-slate-500">{e.descripcion}</p>}
+                  <p className="font-medium text-[var(--text-primary)]">{e.nombre}</p>
+                  {e.descripcion && <p className="mt-0.5 text-[var(--text-secondary)]">{e.descripcion}</p>}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {e.plazo_dias != null ? `${e.plazo_dias} días` : '—'}
@@ -143,31 +143,31 @@ function RiesgosBlock({ r }: { r: RiesgosContractuales }) {
   const criticas: ClausulaCritica[] = r.clausulas_criticas || []
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium">Riesgos contractuales</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Riesgos contractuales</h2>
       <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
         {r.propiedad_materiales && (
-          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
             Propiedad materiales: {r.propiedad_materiales}
           </span>
         )}
         {r.plataforma_provee && (
-          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
             Plataforma: {r.plataforma_provee}
           </span>
         )}
         {r.penalidad_factor_f != null && (
-          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
             F = {r.penalidad_factor_f}
           </span>
         )}
         {r.penalidad_tope_pct != null && (
-          <span className="rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
             Tope {r.penalidad_tope_pct}%
           </span>
         )}
       </div>
       {r.penalidad_formula && (
-        <p className="mb-3 text-[12px] text-slate-500">{r.penalidad_formula}</p>
+        <p className="mb-3 text-[12px] text-[var(--text-secondary)]">{r.penalidad_formula}</p>
       )}
       {criticas.length > 0 && (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -179,7 +179,7 @@ function RiesgosBlock({ r }: { r: RiesgosContractuales }) {
                   {c.impacto}
                 </span>
               </div>
-              <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">{c.descripcion}</p>
+              <p className="mt-1 text-[12px] text-[var(--text-secondary)]">{c.descripcion}</p>
             </div>
           ))}
         </div>
@@ -204,11 +204,11 @@ function CondCard({
     ? 'text-red-700 dark:text-red-300'
     : tono === 'warn'
       ? 'text-amber-800 dark:text-amber-200'
-      : 'text-slate-500'
+      : 'text-[var(--text-secondary)]'
   const showExtra = Boolean(extra) && (tono !== 'ok' || extra !== value)
   return (
     <div className={`rounded-xl border p-3 ${tonoCls(tono)}`}>
-      <p className="text-[11px] text-slate-500">{title}</p>
+      <p className="text-[11px] text-[var(--text-secondary)]">{title}</p>
       <p className="mt-0.5 text-sm font-medium">{value}</p>
       {showExtra && extra && <p className={`mt-1 text-[11px] ${extraCls}`}>{extra}</p>}
     </div>
@@ -439,8 +439,8 @@ export default function AnalisisContrato() {
           )}
 
           <section>
-            <h2 className="mb-1 text-sm font-medium">Qué se contrata</h2>
-            <p className="text-sm text-slate-700 dark:text-slate-300">{a.resumen}</p>
+            <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Qué se contrata</h2>
+            <p className="text-sm text-[var(--text-secondary)]">{a.resumen}</p>
           </section>
 
           {(a.componentes_servicio?.length ?? 0) > 1 && (
@@ -449,22 +449,22 @@ export default function AnalisisContrato() {
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
-              <p className="text-[11px] text-slate-500">Encaje</p>
+              <p className="text-[11px] text-[var(--text-secondary)]">Encaje</p>
               <p className="mt-1 text-sm font-medium">
                 {labelRubro(a.encaje.rubro)} · {labelCalifica(a.encaje.califica)}
               </p>
-              <p className="mt-1 text-[11px] text-slate-500">Perfil pedido: {a.encaje.perfil_pedido || 'no consta'}</p>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{a.encaje.razon}</p>
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">Perfil pedido: {a.encaje.perfil_pedido || 'no consta'}</p>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">{a.encaje.razon}</p>
               {a.requisitos_proveedor && (
                 <RequisitosBlock r={a.requisitos_proveedor} />
               )}
             </div>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
-              <p className="text-[11px] text-slate-500">Economía (estimaciones)</p>
+              <p className="text-[11px] text-[var(--text-secondary)]">Economía (estimaciones)</p>
               <p className="mt-1 text-sm">Valor est. {soles(a.economia.valor_estimado_soles)}</p>
               <p className="text-sm">Costo est. {soles(a.economia.costo_estimado_soles)}</p>
               <p className="text-sm font-medium">Margen est. {soles(a.economia.margen_soles)}</p>
-              <p className="mt-2 text-[11px] text-slate-500">{a.economia.pistas_valor}</p>
+              <p className="mt-2 text-[11px] text-[var(--text-secondary)]">{a.economia.pistas_valor}</p>
               {(a.viabilidad?.cotizacion_por_componente?.length ?? 0) > 0 && (
                 <EconomiaPorComponente
                   componentes={a.viabilidad!.cotizacion_por_componente!}
@@ -480,7 +480,7 @@ export default function AnalisisContrato() {
           )}
 
           <section>
-            <h2 className="mb-2 text-sm font-medium">Condiciones (del TDR)</h2>
+            <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Condiciones (del TDR)</h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <CondCard
                 title="Modalidad"
@@ -524,13 +524,13 @@ export default function AnalisisContrato() {
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-sm font-medium">Supuestos (explícitos)</p>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-slate-600 dark:text-slate-300">
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-[var(--text-secondary)]">
                 {(a.economia.supuestos || []).map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </div>
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
               <p className="text-sm font-medium">Lo que la IA no sabe</p>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-slate-600 dark:text-slate-300">
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-[var(--text-secondary)]">
                 {(a.economia.lo_que_no_sabe || []).map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </div>
@@ -539,7 +539,7 @@ export default function AnalisisContrato() {
           {(a.optimizacion || []).filter(s => String(s).trim()).length > 0 && (
             <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3">
               <p className="text-sm font-medium">Cómo mejorar el margen</p>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-600 dark:text-slate-300">
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[var(--text-secondary)]">
                 {a.optimizacion.filter(s => String(s).trim()).map((s, i) => <li key={i}>{s}</li>)}
               </ul>
             </section>
@@ -860,7 +860,7 @@ function ChatEscenarios({
           const next = [...m]
           next[next.length - 1] = {
             role: 'bot',
-            text: payload.mensaje || 'Primero analizá el contrato',
+            text: payload.mensaje || 'Analizá el contrato primero. Recargá esta página y esperá a que termine el análisis.',
             aviso: true,
           }
           return next

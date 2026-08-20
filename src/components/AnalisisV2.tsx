@@ -199,7 +199,7 @@ export function AlternativasBlock({ items }: { items: Alternativa[] }) {
   if (items.length === 1) {
     return (
       <section>
-        <h2 className="mb-2 text-sm font-medium">Vía de postulación</h2>
+        <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Vía de postulación</h2>
         <AlternativaPanel alt={items[0]} />
       </section>
     )
@@ -207,7 +207,7 @@ export function AlternativasBlock({ items }: { items: Alternativa[] }) {
   const actual = items[tab] ?? items[0]
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium">Vías de postulación</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Vías de postulación</h2>
       <div className="-mx-3 mb-3 flex gap-1 overflow-x-auto px-3">
         {items.map((a, i) => (
           <button
@@ -244,7 +244,7 @@ export function ComponentesTabs({ items }: { items: ComponenteServicio[] }) {
   if (!c) return null
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium">Componentes del servicio</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Componentes del servicio</h2>
       <div className="-mx-3 mb-3 flex gap-1 overflow-x-auto px-3">
         {items.map((item, i) => {
           const Icon = iconoComponente(item.nombre)
@@ -367,7 +367,7 @@ export function EconomiaPorComponente({
 export function ContradiccionesBlock({ items }: { items: ContradiccionTdr[] }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium">Contradicciones e inconsistencias del TDR</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--text-primary)]">Contradicciones e inconsistencias del TDR</h2>
       <div className="space-y-2">
         {items.map((c, i) => (
           <div key={i} className={`rounded-xl border p-3 ${impactoCls(c.impacto)}`}>

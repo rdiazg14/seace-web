@@ -25,8 +25,9 @@ export default function ContratoCard({
         <div className="flex min-w-0 flex-wrap gap-1">
           <EstadoPill estado={c.estado} />
           <ObjetoPill objeto={c.objeto} />
-          {c.categoria_it && <ItPill cat={c.categoria_it} />}
-          {c.relevancia_ia && <IaPill nivel={c.relevancia_ia} />}
+          {c.relevancia_ia
+            ? <IaPill nivel={c.relevancia_ia} />
+            : c.categoria_it && <ItPill cat={c.categoria_it} />}
           {c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
             <CierraPill label={cierre.label} tone={cierre.tone} />
           )}

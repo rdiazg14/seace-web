@@ -108,7 +108,7 @@ export default function Dashboard() {
     for (const c of itVig) {
       const d = dayOf(c.fecha_fin_cotizacion)
       if (!d) continue
-      if (d <= today) hoy.push(c)
+      if (d === today) hoy.push(c)
       else if (d === tomorrow) manana.push(c)
       else if (d <= weekEnd) semana.push(c)
     }
