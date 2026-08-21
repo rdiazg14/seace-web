@@ -207,6 +207,7 @@ function maxNivel(a: NivelRubro | null, b: NivelRubro | null): NivelRubro | null
 }
 
 export function clasificarNivel(c: Contrato): { nivel: NivelRubro | null; overlay: OverlayMotivo; altaIaReal: boolean } {
+  // Gemelo SQL: fn_rubro_energetic en seace-monitor/capa_semantica.sql
   const texto = textoContrato(c)
   const overlay = overlayDesdeTexto(texto)
   const cat = c.categoria_it
