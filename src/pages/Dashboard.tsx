@@ -7,20 +7,37 @@ import {
 import { supabase } from '../lib/supabase'
 import type { Contrato, DashboardResumen } from '../types'
 import {
-  addCalendarDays, cierraEn, dayOf, fmtFecha, fmtFechaLarga, haceCuanto,
-  limaDateISO, nroContrato, seaceUrl, tituloContrato,
+  cierraEn, fmtFecha, fmtFechaLarga, haceCuanto,
+  nroContrato, seaceUrl, tituloContrato,
 } from '../lib/format'
 import { IT_CHIPS, labelCat, tipoEntidad } from '../lib/cats'
 import { useTheme } from '../lib/theme'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import { CierraPill, EstadoPill, ItPill, ObjetoPill } from '../components/Pills'
+import {
+  cargarCapaSemantica,
+  RUBRO_LABEL,
+  tendenciaPct,
+  type CapaSemantica,
+  type ContratoEstado,
+  type RubroAgg,
+} from '../lib/capaSemantica'
+import { nivelLabel } from '../lib/rutaDia'
 
 type Tab = 'oportunidades' | 'resumen' | 'tendencias'
 type UrgFilter = 'todos' | 'hoy' | 'semana' | 'mes'
+type VistaLista = 'postulable' | 'cerrados'
 
 const PIE_COLORS = ['#14B8A6', '#6366f1', '#f59e0b', '#ef4444']
 const LINE_COLORS = ['#14B8A6', '#8b5cf6', '#f59e0b', '#3b82f6', '#ef4444']
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+const RUBRO_COLORS: Record<string, string> = {
+  nucleo: '#14B8A6',
+  adyacente: '#8b5cf6',
+  oportunista: '#f59e0b',
+  marginal: '#64748b',
+  sin_clasificar: '#94a3b8',
+}
 
 export default function Dashboard() {
   const { theme } = useTheme()
@@ -31,16 +48,14 @@ export default function Dashboard() {
 
   const [tab, setTab] = useState<Tab>('oportunidades')
   const [resumen, setResumen] = useState<DashboardResumen[]>([])
-  const [itVig, setItVig] = useState<Contrato[]>([])
+  const [capa, setCapa] = useState<CapaSemantica | null>(null)
   const [recientes, setRecientes] = useState<Contrato[]>([])
-  const [nuevosHoy, setNuevosHoy] = useState(0)
-  const [itSemana, setItSemana] = useState(0)
-  const [itSemanaAnt, setItSemanaAnt] = useState(0)
   const [ultima, setUltima] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [catChip, setCatChip] = useState<string | null>(null)
   const [urg, setUrg] = useState<UrgFilter>('todos')
+  const [vista, setVista] = useState<VistaLista>('postulable')
   const [narrow, setNarrow] = useState(false)
 
   useEffect(() => {
@@ -56,37 +71,19 @@ export default function Dashboard() {
     async function load() {
       setLoading(true)
       setError(null)
-      const now = new Date()
-      const iso24h = new Date(now.getTime() - 86400000).toISOString()
-      const iso7 = new Date(now.getTime() - 7 * 86400000).toISOString()
-      const iso14 = new Date(now.getTime() - 14 * 86400000).toISOString()
       try {
-        const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
+        const [capaRes, rResumen, rRecientes, rUltima] = await Promise.all([
+          cargarCapaSemantica(),
           supabase.from('dashboard_resumen').select('*'),
-          supabase.from('contratos').select('*')
-            .eq('estado', 'Vigente').not('categoria_it', 'is', null)
-            .order('fecha_fin_cotizacion', { ascending: true, nullsFirst: false })
-            .limit(800),
-          supabase.from('contratos').select('*')
-            .order('fecha_publica', { ascending: false }).limit(10),
-          supabase.from('contratos').select('id', { count: 'exact', head: true })
-            .gte('fecha_publica', iso24h),
-          supabase.from('contratos').select('id', { count: 'exact', head: true })
-            .not('categoria_it', 'is', null).gte('fecha_publica', iso7),
-          supabase.from('contratos').select('id', { count: 'exact', head: true })
-            .not('categoria_it', 'is', null).gte('fecha_publica', iso14).lt('fecha_publica', iso7),
-          supabase.from('contratos').select('fecha_publica')
-            .order('fecha_publica', { ascending: false }).limit(1),
+          supabase.from('contratos').select('*').order('fecha_publica', { ascending: false }).limit(10),
+          supabase.from('contratos').select('fecha_publica').order('fecha_publica', { ascending: false }).limit(1),
         ])
         if (cancelled) return
-        if (r1.error || r2.error) throw new Error(r1.error?.message || r2.error?.message)
-        setResumen((r1.data ?? []) as DashboardResumen[])
-        setItVig((r2.data ?? []) as Contrato[])
-        setRecientes((r3.data ?? []) as Contrato[])
-        setNuevosHoy(r4.count ?? 0)
-        setItSemana(r5.count ?? 0)
-        setItSemanaAnt(r6.count ?? 0)
-        setUltima(r7.data?.[0]?.fecha_publica ?? null)
+        if (rResumen.error) throw new Error(rResumen.error.message)
+        setCapa(capaRes)
+        setResumen((rResumen.data ?? []) as DashboardResumen[])
+        setRecientes((rRecientes.data ?? []) as Contrato[])
+        setUltima(rUltima.data?.[0]?.fecha_publica ?? null)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar el dashboard')
       } finally {
@@ -97,44 +94,24 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [])
 
-  const today = limaDateISO()
-  const tomorrow = addCalendarDays(today, 1)
-  const weekEnd = addCalendarDays(today, 7)
+  const kpis = capa?.kpis
+  const negocio = capa?.negocio
+  const postulables = capa?.postulables ?? []
+  const cerrados = capa?.cerrados ?? []
 
-  const urgentes = useMemo(() => {
-    const hoy: Contrato[] = []
-    const manana: Contrato[] = []
-    const semana: Contrato[] = []
-    for (const c of itVig) {
-      const d = dayOf(c.fecha_fin_cotizacion)
-      if (!d) continue
-      if (d === today) hoy.push(c)
-      else if (d === tomorrow) manana.push(c)
-      else if (d <= weekEnd) semana.push(c)
-    }
-    return { hoy, manana, semana }
-  }, [itVig, today, tomorrow, weekEnd])
+  const urgentes = useMemo(() => ({
+    hoy: postulables.filter((c) => c.cierra_hoy),
+    manana: postulables.filter((c) => c.cierra_manana),
+    semana: postulables.filter((c) => c.cierra_semana),
+  }), [postulables])
 
   const catBars = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const r of resumen) {
-      if (r.estado !== 'Vigente' || !r.categoria_it) continue
-      map.set(r.categoria_it, (map.get(r.categoria_it) ?? 0) + r.total)
-    }
-    return [...map.entries()]
-      .map(([id, total]) => ({ id, label: labelCat(id), total }))
-      .sort((a, b) => b.total - a.total)
+    return (kpis?.por_linea ?? [])
+      .map((r) => ({ id: r.linea, label: labelCat(r.linea) || r.linea, total: r.total }))
       .slice(0, 6)
-  }, [resumen])
+  }, [kpis])
 
-  const vigentesItCount = useMemo(
-    () => resumen.filter(r => r.estado === 'Vigente' && r.categoria_it).reduce((s, r) => s + r.total, 0),
-    [resumen],
-  )
-
-  const tendenciaPct = itSemanaAnt === 0
-    ? (itSemana > 0 ? 100 : 0)
-    : Math.round(((itSemana - itSemanaAnt) / itSemanaAnt) * 100)
+  const tendenciaAltas = tendenciaPct(kpis?.altas_it_7d ?? 0, kpis?.altas_it_7d_prev ?? 0)
 
   const porMes = useMemo(() => {
     const map = new Array(12).fill(0)
@@ -150,30 +127,30 @@ export default function Dashboard() {
     for (const r of resumen) map.set(r.objeto || '—', (map.get(r.objeto || '—') ?? 0) + r.total)
     const arr = [...map.entries()].map(([name, value]) => ({ name, value }))
     const sum = arr.reduce((s, x) => s + x.value, 0) || 1
-    return arr.map(x => ({ ...x, pct: Math.round((x.value / sum) * 100) }))
+    return arr.map((x) => ({ ...x, pct: Math.round((x.value / sum) * 100) }))
   }, [resumen])
 
   const topEntidades = useMemo(() => {
     const map = new Map<string, number>()
-    for (const c of itVig) map.set(c.entidad, (map.get(c.entidad) ?? 0) + 1)
+    for (const c of postulables) map.set(c.entidad, (map.get(c.entidad) ?? 0) + 1)
     return [...map.entries()].map(([name, total]) => ({ name: name.slice(0, 42), total }))
       .sort((a, b) => b.total - a.total).slice(0, 10)
-  }, [itVig])
+  }, [postulables])
 
   const porTipoEnt = useMemo(() => {
     const map = new Map<string, number>()
-    for (const c of itVig) {
+    for (const c of postulables) {
       const t = tipoEntidad(c.entidad)
       map.set(t, (map.get(t) ?? 0) + 1)
     }
     return [...map.entries()].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total)
-  }, [itVig])
+  }, [postulables])
 
-  const topCats = useMemo(() => catBars.slice(0, 5).map(c => c.id), [catBars])
+  const topCats = useMemo(() => catBars.slice(0, 5).map((c) => c.id), [catBars])
 
   const seriesIT = useMemo(() => {
-    const months = porMes.map(m => m.mes)
-    const rows = months.map(mes => {
+    const months = porMes.map((m) => m.mes)
+    const rows = months.map((mes) => {
       const row: Record<string, string | number> = { mes }
       for (const cat of topCats) row[cat] = 0
       return row
@@ -189,7 +166,7 @@ export default function Dashboard() {
   const cmpMes = useMemo(() => {
     const nowM = new Date().getUTCMonth()
     const prev = nowM === 0 ? 11 : nowM - 1
-    return catBars.map(c => {
+    return catBars.map((c) => {
       let cur = 0
       let ant = 0
       for (const r of resumen) {
@@ -199,34 +176,49 @@ export default function Dashboard() {
         if (m === prev) ant += r.total
       }
       const pct = ant === 0 ? (cur > 0 ? 100 : 0) : Math.round(((cur - ant) / ant) * 100)
-      const spark = seriesIT.map(row => Number(row[c.id] ?? 0))
+      const spark = seriesIT.map((row) => Number(row[c.id] ?? 0))
       return { ...c, cur, ant, pct, spark }
     })
   }, [catBars, resumen, seriesIT])
 
+  const baseLista: ContratoEstado[] = vista === 'postulable' ? postulables : cerrados
+
   const listaOpp = useMemo(() => {
-    return itVig.filter(c => {
+    return baseLista.filter((c) => {
       if (catChip && c.categoria_it !== catChip) return false
-      const u = cierraEn(c.fecha_fin_cotizacion)
-      if (urg === 'hoy') return u.tone === 'hoy' || u.tone === 'vencido' || u.tone === 'manana'
-      if (urg === 'semana') return u.days != null && u.days <= 7
-      if (urg === 'mes') return u.days != null && u.days <= 30
+      if (vista === 'cerrados') return true
+      if (urg === 'hoy') return c.cierra_hoy || c.cierra_manana
+      if (urg === 'semana') return c.cierra_7d
+      if (urg === 'mes') {
+        const u = cierraEn(c.fecha_fin_cotizacion)
+        return u.days != null && u.days >= 0 && u.days <= 30
+      }
       return true
     })
-  }, [itVig, catChip, urg])
+  }, [baseLista, catChip, urg, vista])
+
+  const chartRubro = (negocio?.por_rubro ?? []).map((r) => ({
+    name: RUBRO_LABEL[r.rubro as RubroAgg] ?? r.rubro,
+    value: r.total,
+    rubro: r.rubro,
+  }))
+  const chartLinea = (negocio?.por_linea ?? []).map((r) => ({
+    name: labelCat(r.linea) || r.linea,
+    value: r.total,
+  }))
 
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl space-y-4 px-3 py-5 sm:px-4">
         <Skeleton className="h-16 w-full" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}</div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}</div>
       </div>
     )
   }
 
-  if (error) {
-    return <div className="mx-auto max-w-6xl px-3 py-8"><ErrorBox>{error}</ErrorBox></div>
+  if (error || !kpis || !negocio) {
+    return <div className="mx-auto max-w-6xl px-3 py-8"><ErrorBox>{error || 'Sin datos de la capa semántica'}</ErrorBox></div>
   }
 
   const sinUrg = urgentes.hoy.length + urgentes.manana.length + urgentes.semana.length === 0
@@ -238,7 +230,9 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h1 className="text-xl text-slate-900 sm:text-2xl dark:text-slate-50">Monitor SEACE</h1>
-            <p className="text-sm text-slate-500">Oportunidades del día para IT/tecnología</p>
+            <p className="text-sm text-slate-500">
+              Tablero de negocio ENERTRONIC · postulable = Vigente con ventana abierta (día Lima)
+            </p>
           </div>
           <p className="text-xs capitalize text-slate-400">
             {fmtFechaLarga()}
@@ -249,29 +243,34 @@ export default function Dashboard() {
 
       {sinUrg ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-          Sin urgencias hoy — no hay contratos IT que cierren en los próximos 7 días.
+          Sin urgencias hoy — no hay postulables que cierren en los próximos 7 días.
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <UrgCard tone="hoy" title="Cierran hoy" items={urgentes.hoy} />
           <UrgCard tone="manana" title="Cierran mañana" items={urgentes.manana} />
-          <UrgCard tone="semana" title="Esta semana" items={urgentes.semana} />
+          <UrgCard tone="semana" title="Esta semana" items={urgentes.semana} hint="días 2–7" />
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Nuevos hoy" value={nuevosHoy.toLocaleString('es-PE')} hint="publicados 24 h" />
-        <Kpi label="Vigentes IT" value={vigentesItCount.toLocaleString('es-PE')} hint="proceso vigente en SEACE" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Kpi label="Nuevos hoy" value={kpis.nuevos_hoy_postulables.toLocaleString('es-PE')} hint="postulables publicados hoy" />
+        <Kpi label="Postulables" value={kpis.total_postulables.toLocaleString('es-PE')} hint="Vigente + ventana abierta" />
         <Kpi
-          label="Tendencia IT"
-          value={`${tendenciaPct > 0 ? '+' : ''}${tendenciaPct}%`}
-          hint="vs semana anterior"
-          up={tendenciaPct >= 0}
+          label="Núcleo postulables"
+          value={negocio.nucleo_postulables.toLocaleString('es-PE')}
+          hint={`IA ${negocio.nucleo_ia} · Cloud ${negocio.nucleo_cloud} · Dev ${negocio.nucleo_dev}${negocio.nucleo_tel ? ` · Tel ${negocio.nucleo_tel}` : ''}`}
+        />
+        <Kpi
+          label="Altas IT 7 días"
+          value={`${tendenciaAltas > 0 ? '+' : ''}${tendenciaAltas}%`}
+          hint={`${kpis.altas_it_7d} vs ${kpis.altas_it_7d_prev} (7 d previos, día Lima)`}
+          up={tendenciaAltas >= 0}
         />
         <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 lg:col-span-1">
-          <p className="text-[11px] text-slate-500">Por categoría IT vigente</p>
+          <p className="text-[11px] text-slate-500">Postulables por línea</p>
           <div className="mt-2 space-y-1.5">
-            {catBars.slice(0, 5).map(c => {
+            {catBars.slice(0, 5).map((c) => {
               const max = catBars[0]?.total || 1
               return (
                 <div key={c.id} className="flex items-center gap-2 text-[11px]">
@@ -287,10 +286,61 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <p className="text-[11px] text-slate-400">
+        En evaluación {kpis.en_evaluacion.toLocaleString('es-PE')} · Vigentes con ventana vencida {kpis.vigentes_ventana_vencida.toLocaleString('es-PE')}
+        {' '}(fuera del default; chip explícito abajo). Valor de pipeline y tasa cotizado: no hay esos campos en BD.
+      </p>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Inteligencia de negocio</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ChartCard title="Postulables por rubro">
+            {chartRubro.length === 0 ? (
+              <p className="py-8 text-center text-xs text-slate-500">Sin postulables</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={narrow ? 220 : 240}>
+                <PieChart>
+                  <Pie
+                    data={chartRubro}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={narrow ? 40 : 50}
+                    outerRadius={narrow ? 70 : 85}
+                    label={narrow ? false : (props: { name?: string; percent?: number }) =>
+                      `${props.name ?? ''} ${Math.round((props.percent ?? 0) * 100)}%`}
+                  >
+                    {chartRubro.map((r) => (
+                      <Cell key={r.rubro} fill={RUBRO_COLORS[r.rubro] || '#94a3b8'} />
+                    ))}
+                  </Pie>
+                  <Legend />
+                  <Tooltip contentStyle={tip} formatter={(v, n) => [Number(v ?? 0).toLocaleString('es-PE'), String(n)]} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+          <ChartCard title="Postulables por línea">
+            {chartLinea.length === 0 ? (
+              <p className="py-8 text-center text-xs text-slate-500">Sin postulables</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={narrow ? 220 : 240}>
+                <BarChart data={chartLinea} barSize={narrow ? 14 : 22}>
+                  <CartesianGrid stroke={grid} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: axis, fontSize: 10 }} interval={0} />
+                  <YAxis tick={{ fill: axis, fontSize: 11 }} width={28} allowDecimals={false} />
+                  <Tooltip contentStyle={tip} />
+                  <Bar dataKey="value" fill="#14B8A6" radius={[4, 4, 0, 0]} name="Postulables" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </div>
+      </section>
+
       <div>
         <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
           {([
-            ['oportunidades', 'Oportunidades IT vigentes'],
+            ['oportunidades', 'Oportunidades postulables'],
             ['resumen', 'Resumen general'],
             ['tendencias', 'Tendencias IT'],
           ] as const).map(([id, label]) => (
@@ -310,6 +360,22 @@ export default function Dashboard() {
 
         {tab === 'oportunidades' && (
           <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setVista('postulable')}
+                className={`rounded-full px-3 py-1 text-xs ${vista === 'postulable' ? 'bg-teal-500 text-white' : 'border border-slate-300 dark:border-slate-600'}`}
+              >
+                Postulables
+              </button>
+              <button
+                type="button"
+                onClick={() => setVista('cerrados')}
+                className={`rounded-full px-3 py-1 text-xs ${vista === 'cerrados' ? 'bg-slate-600 text-white' : 'border border-slate-300 dark:border-slate-600'}`}
+              >
+                En evaluación / vencidos
+              </button>
+            </div>
             <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
               <button
                 type="button"
@@ -318,40 +384,43 @@ export default function Dashboard() {
               >
                 Todas
               </button>
-              {IT_CHIPS.map(c => (
+              {IT_CHIPS.map((c) => (
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => setCatChip(x => x === c.id ? null : c.id)}
+                  onClick={() => setCatChip((x) => x === c.id ? null : c.id)}
                   className={`shrink-0 rounded-full px-3 py-1 text-xs ${catChip === c.id ? 'bg-violet-500 text-white' : 'border border-slate-300 dark:border-slate-600'}`}
                 >
                   {c.label}
                 </button>
               ))}
             </div>
-            <div className="flex gap-1.5">
-              {([
-                ['todos', 'Todos'],
-                ['hoy', 'Hoy / mañana'],
-                ['semana', 'Esta semana'],
-                ['mes', 'Este mes'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setUrg(id)}
-                  className={`rounded-full px-3 py-1 text-xs ${urg === id ? 'bg-teal-500 text-white' : 'border border-slate-300 dark:border-slate-600'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {vista === 'postulable' && (
+              <div className="flex gap-1.5">
+                {([
+                  ['todos', 'Todos'],
+                  ['hoy', 'Hoy / mañana'],
+                  ['semana', 'Esta semana'],
+                  ['mes', 'Este mes'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setUrg(id)}
+                    className={`rounded-full px-3 py-1 text-xs ${urg === id ? 'bg-teal-500 text-white' : 'border border-slate-300 dark:border-slate-600'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {listaOpp.length === 0 ? (
-              <EmptyState title="Sin oportunidades con esos filtros" hint="Prueba otra categoría o rango de cierre." />
+              <EmptyState title="Sin oportunidades con esos filtros" hint="Prueba otra categoría, rango o el chip de cerrados." />
             ) : (
               <div className="space-y-2">
-                {listaOpp.slice(0, 40).map(c => {
+                {listaOpp.slice(0, 40).map((c) => {
                   const u = cierraEn(c.fecha_fin_cotizacion)
+                  const cerrado = !c.es_postulable
                   return (
                     <div key={c.id} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
@@ -359,8 +428,19 @@ export default function Dashboard() {
                         <p className="text-xs text-slate-500">{c.entidad}</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {c.categoria_it && <ItPill cat={c.categoria_it} />}
+                          {c.rubro && (
+                            <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              {nivelLabel(c.rubro)}
+                            </span>
+                          )}
                           <ObjetoPill objeto={c.objeto} />
-                          <CierraPill label={u.label} tone={u.tone} />
+                          {cerrado ? (
+                            <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              {c.es_en_evaluacion ? 'En evaluación' : 'Cerrado'}
+                            </span>
+                          ) : (
+                            <CierraPill label={u.label} tone={u.tone} />
+                          )}
                         </div>
                       </div>
                       <a href={seaceUrl(c.id)} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-medium text-teal-600 dark:text-teal-400">
@@ -376,18 +456,18 @@ export default function Dashboard() {
 
         {tab === 'resumen' && (
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="Contratos por mes (2026)">
+            <ChartCard title="Contratos publicados por mes (todos los estados, mes UTC)">
               <ResponsiveContainer width="100%" height={narrow ? 220 : 260}>
                 <BarChart data={porMes} barSize={narrow ? 12 : 22}>
                   <CartesianGrid stroke={grid} vertical={false} />
                   <XAxis dataKey="mes" tick={{ fill: axis, fontSize: 11 }} />
                   <YAxis tick={{ fill: axis, fontSize: 11 }} width={36} />
-                  <Tooltip contentStyle={tip} formatter={v => [Number(v ?? 0).toLocaleString('es-PE'), 'Contratos']} />
+                  <Tooltip contentStyle={tip} formatter={(v) => [Number(v ?? 0).toLocaleString('es-PE'), 'Contratos']} />
                   <Bar dataKey="total" fill="#14B8A6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
-            <ChartCard title="Distribución por objeto">
+            <ChartCard title="Distribución por objeto (histórico completo)">
               <ResponsiveContainer width="100%" height={narrow ? 240 : 260}>
                 <PieChart>
                   <Pie
@@ -405,7 +485,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             </ChartCard>
-            <ChartCard title="Top 10 entidades (IT vigentes)">
+            <ChartCard title="Top 10 entidades (postulables)">
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={topEntidades} layout="vertical" margin={{ left: 8, right: 8 }}>
                   <CartesianGrid stroke={grid} horizontal={false} />
@@ -416,7 +496,7 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
-            <ChartCard title="Tipo de entidad (IT vigentes)">
+            <ChartCard title="Tipo de entidad (postulables)">
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={porTipoEnt} barSize={28}>
                   <CartesianGrid stroke={grid} vertical={false} />
@@ -432,6 +512,9 @@ export default function Dashboard() {
 
         {tab === 'tendencias' && (
           <div className="mt-4 space-y-4">
+            <p className="text-[11px] text-slate-400">
+              Serie histórica de publicaciones (todos los estados, mes UTC de fecha_publica). No es el pipeline postulable.
+            </p>
             <ChartCard title="Evolución mensual — top 5 categorías IT">
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={seriesIT}>
@@ -457,7 +540,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cmpMes.map(c => (
+                  {cmpMes.map((c) => (
                     <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
                       <td className="px-3 py-2 font-medium">{c.label}</td>
                       <td className="px-3 py-2">{c.cur.toLocaleString('es-PE')}</td>
@@ -479,7 +562,7 @@ export default function Dashboard() {
       <section>
         <h2 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-200">Actividad reciente</h2>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {recientes.map(c => (
+          {recientes.map((c) => (
             <Link key={c.id} to={`/buscar?q=${encodeURIComponent(nroContrato(c))}`} className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-teal-400 dark:border-slate-800 dark:bg-slate-900">
               <p className="line-clamp-2 text-sm font-medium">{tituloContrato(c)}</p>
               <p className="text-xs text-slate-500">{c.entidad}</p>
@@ -515,7 +598,17 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
-function UrgCard({ tone, title, items }: { tone: 'hoy' | 'manana' | 'semana'; title: string; items: Contrato[] }) {
+function UrgCard({
+  tone,
+  title,
+  items,
+  hint,
+}: {
+  tone: 'hoy' | 'manana' | 'semana'
+  title: string
+  items: ContratoEstado[]
+  hint?: string
+}) {
   const wrap =
     tone === 'hoy'
       ? 'border-red-500/40 bg-red-500/10'
@@ -528,11 +621,12 @@ function UrgCard({ tone, title, items }: { tone: 'hoy' | 'manana' | 'semana'; ti
         <p className="text-sm font-medium">{title}</p>
         <p className="text-lg font-medium">{items.length}</p>
       </div>
+      {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
       {items.length === 0 ? (
         <p className="mt-2 text-xs text-slate-500">Ninguno</p>
       ) : (
         <ul className="mt-2 space-y-1.5">
-          {items.slice(0, 3).map(c => (
+          {items.slice(0, 3).map((c) => (
             <li key={c.id}>
               <a href={seaceUrl(c.id)} target="_blank" rel="noreferrer" className="block">
                 <p className="line-clamp-1 text-xs font-medium">{tituloContrato(c)}</p>
