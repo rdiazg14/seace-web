@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
-import { CierraPill, EstadoPill, IaPill, ItPill, ObjetoPill } from './Pills'
+import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 
 export default function ContratoCard({
   c,
@@ -25,9 +25,7 @@ export default function ContratoCard({
         <div className="flex min-w-0 flex-wrap gap-1">
           <EstadoPill estado={c.estado} />
           <ObjetoPill objeto={c.objeto} />
-          {c.relevancia_ia
-            ? <IaPill nivel={c.relevancia_ia} />
-            : c.categoria_it && <ItPill cat={c.categoria_it} />}
+          <CatItIaPill categoria_it={c.categoria_it} relevancia_ia={c.relevancia_ia} />
           {c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
             <CierraPill label={cierre.label} tone={cierre.tone} />
           )}
