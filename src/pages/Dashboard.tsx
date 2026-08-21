@@ -16,10 +16,14 @@ import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import { CierraPill, EstadoPill, ItPill, ObjetoPill } from '../components/Pills'
 import {
   cargarCapaSemantica,
+  cargarKpisConversion,
+  fmtTasa,
   RUBRO_LABEL,
   tendenciaPct,
   type CapaSemantica,
   type ContratoEstado,
+  type KpisConversion,
+  type KpisConversionRubro,
   type RubroAgg,
 } from '../lib/capaSemantica'
 import { nivelLabel } from '../lib/rutaDia'
@@ -49,6 +53,10 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>('oportunidades')
   const [resumen, setResumen] = useState<DashboardResumen[]>([])
   const [capa, setCapa] = useState<CapaSemantica | null>(null)
+  const [conversion, setConversion] = useState<{
+    global: KpisConversion
+    rubros: KpisConversionRubro[]
+  } | null>(null)
   const [recientes, setRecientes] = useState<Contrato[]>([])
   const [ultima, setUltima] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -72,15 +80,17 @@ export default function Dashboard() {
       setLoading(true)
       setError(null)
       try {
-        const [capaRes, rResumen, rRecientes, rUltima] = await Promise.all([
+        const [capaRes, rResumen, rRecientes, rUltima, convRes] = await Promise.all([
           cargarCapaSemantica(),
           supabase.from('dashboard_resumen').select('*'),
           supabase.from('contratos').select('*').order('fecha_publica', { ascending: false }).limit(10),
           supabase.from('contratos').select('fecha_publica').order('fecha_publica', { ascending: false }).limit(1),
+          cargarKpisConversion(),
         ])
         if (cancelled) return
         if (rResumen.error) throw new Error(rResumen.error.message)
         setCapa(capaRes)
+        setConversion(convRes)
         setResumen((rResumen.data ?? []) as DashboardResumen[])
         setRecientes((rRecientes.data ?? []) as Contrato[])
         setUltima(rUltima.data?.[0]?.fecha_publica ?? null)
@@ -288,8 +298,10 @@ export default function Dashboard() {
 
       <p className="text-[11px] text-slate-400">
         En evaluación {kpis.en_evaluacion.toLocaleString('es-PE')} · Vigentes con ventana vencida {kpis.vigentes_ventana_vencida.toLocaleString('es-PE')}
-        {' '}(fuera del default; chip explícito abajo). Valor de pipeline y tasa cotizado: no hay esos campos en BD.
+        {' '}(fuera del default; chip explícito abajo).
       </p>
+
+      <ConversionBlock data={conversion} />
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Inteligencia de negocio</h2>
@@ -586,6 +598,91 @@ function Kpi({ label, value, hint, up }: { label: string; value: string; hint: s
       <p className={`mt-1 text-xl font-medium ${up === false ? 'text-red-500' : up === true ? 'text-emerald-500' : ''}`}>{value}</p>
       <p className="text-[11px] text-slate-400">{hint}</p>
     </div>
+  )
+}
+
+function ConversionBlock({
+  data,
+}: {
+  data: { global: KpisConversion; rubros: KpisConversionRubro[] } | null
+}) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Conversión (últimos 30 días)</h2>
+        <p className="text-[11px] text-slate-400">
+          Dos denominadores distintos: cobertura = radar IT publicado; ejecución = postulables (Ruta del día).
+        </p>
+      </div>
+      {!data ? (
+        <p className="text-xs text-slate-500">Sin datos de conversión todavía.</p>
+      ) : (
+        <>
+          <div>
+            <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Cobertura</p>
+            <p className="mb-2 text-[11px] text-slate-400">
+              Denominador: IT publicado en 30 días (cualquier estado). ¿Cuánto del radar se tocó?
+            </p>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Kpi
+                label="Rankeados 30d"
+                value={data.global.rankeados_30d.toLocaleString('es-PE')}
+                hint="universo IT publicado"
+              />
+              <Kpi label="Cob. análisis" value={fmtTasa(data.global.cob_analisis)} hint="analizados / rankeados" />
+              <Kpi label="Cob. cotización" value={fmtTasa(data.global.cob_cotizacion)} hint="cotizados / analizados" />
+              <Kpi label="Cob. global" value={fmtTasa(data.global.cob_global)} hint="cotizados / rankeados" />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">Ejecución</p>
+            <p className="mb-2 text-[11px] text-slate-400">
+              Denominador: postulables (Vigente + ventana abierta, día Lima). ¿Cuánto de lo accionable se trabajó?
+            </p>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Kpi
+                label="Postulables 30d"
+                value={data.global.postulables_30d.toLocaleString('es-PE')}
+                hint="subconjunto accionable del radar"
+              />
+              <Kpi label="Eje. análisis" value={fmtTasa(data.global.eje_analisis)} hint="analizados postulables / postulables" />
+              <Kpi label="Eje. cotización" value={fmtTasa(data.global.eje_cotizacion)} hint="cotizados postulables / analizados postulables" />
+              <Kpi label="Eje. global" value={fmtTasa(data.global.eje_global)} hint="cotizados postulables / postulables" />
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full min-w-[640px] text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Rubro</th>
+                  <th className="px-3 py-2 font-medium">Rankeados</th>
+                  <th className="px-3 py-2 font-medium">Postulables</th>
+                  <th className="px-3 py-2 font-medium">Cob. análisis</th>
+                  <th className="px-3 py-2 font-medium">Eje. análisis</th>
+                  <th className="px-3 py-2 font-medium">Cob. global</th>
+                  <th className="px-3 py-2 font-medium">Eje. global</th>
+                  <th className="px-3 py-2 font-medium">Eje. cotización</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rubros.map((r) => (
+                  <tr key={r.rubro} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="px-3 py-2 font-medium">{RUBRO_LABEL[r.rubro]}</td>
+                    <td className="px-3 py-2">{r.rankeados_30d.toLocaleString('es-PE')}</td>
+                    <td className="px-3 py-2">{r.postulables_30d.toLocaleString('es-PE')}</td>
+                    <td className="px-3 py-2">{fmtTasa(r.cob_analisis)}</td>
+                    <td className="px-3 py-2">{fmtTasa(r.eje_analisis)}</td>
+                    <td className="px-3 py-2">{fmtTasa(r.cob_global)}</td>
+                    <td className="px-3 py-2">{fmtTasa(r.eje_global)}</td>
+                    <td className="px-3 py-2">{fmtTasa(r.eje_cotizacion)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 

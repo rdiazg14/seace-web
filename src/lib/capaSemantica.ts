@@ -82,6 +82,27 @@ export interface CapaSemantica {
   cerrados: ContratoEstado[]
 }
 
+/** 1 fila de v_kpis_conversion. Tasas 0..1; null = sin denominador (NULLIF). */
+export interface KpisConversion {
+  rankeados_30d: number
+  postulables_30d: number
+  analizados_30d: number
+  cotizados_30d: number
+  analizados_post_30d: number
+  cotizados_post_30d: number
+  cob_analisis: number | null
+  cob_cotizacion: number | null
+  cob_global: number | null
+  eje_analisis: number | null
+  eje_cotizacion: number | null
+  eje_global: number | null
+}
+
+/** Fila de v_kpis_conversion_rubro. */
+export interface KpisConversionRubro extends KpisConversion {
+  rubro: RubroAgg
+}
+
 const ESTADO_COLS = `${RUTA_DIA_COLS},es_postulable,es_vigente_ventana_vencida,es_en_evaluacion,cierra_hoy,cierra_manana,cierra_semana,cierra_7d,es_nuevo_hoy,rubro`
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -96,6 +117,20 @@ function asRecordList(v: unknown): Record<string, unknown>[] {
 function asInt(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Tasa 0..1. null/NaN → null (no convertir a 0: 0% mentiría “fallé”). */
+function asRate(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Porcentaje para UI. null → "—" (sin datos), nunca "0%" por NULLIF. */
+export function fmtTasa(v: number | null): string {
+  if (v == null) return '—'
+  const pct = v * 100
+  return `${pct.toLocaleString('es-PE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })}%`
 }
 
 function asLineas(raw: unknown): LineaAgg[] {
@@ -228,6 +263,33 @@ function parseKpis(row: Record<string, unknown>): KpisDashboard {
   }
 }
 
+function parseConversionCounts(row: Record<string, unknown>): KpisConversion {
+  return {
+    rankeados_30d: asInt(row.rankeados_30d),
+    postulables_30d: asInt(row.postulables_30d),
+    analizados_30d: asInt(row.analizados_30d),
+    cotizados_30d: asInt(row.cotizados_30d),
+    analizados_post_30d: asInt(row.analizados_post_30d),
+    cotizados_post_30d: asInt(row.cotizados_post_30d),
+    cob_analisis: asRate(row.cob_analisis),
+    cob_cotizacion: asRate(row.cob_cotizacion),
+    cob_global: asRate(row.cob_global),
+    eje_analisis: asRate(row.eje_analisis),
+    eje_cotizacion: asRate(row.eje_cotizacion),
+    eje_global: asRate(row.eje_global),
+  }
+}
+
+const RUBRO_ORDEN: RubroAgg[] = ['nucleo', 'adyacente', 'oportunista', 'marginal', 'sin_clasificar']
+
+function parseConversionRubro(row: Record<string, unknown>): KpisConversionRubro {
+  const rubroRaw = String(row.rubro ?? 'sin_clasificar') as RubroAgg
+  return {
+    rubro: RUBRO_ORDEN.includes(rubroRaw) ? rubroRaw : 'sin_clasificar',
+    ...parseConversionCounts(row),
+  }
+}
+
 function parseNegocio(row: Record<string, unknown>): KpisNegocio {
   return {
     nucleo_postulables: asInt(row.nucleo_postulables),
@@ -347,6 +409,28 @@ export async function cargarCapaSemantica(): Promise<CapaSemantica> {
     /* vistas no aplicadas aún */
   }
   return fetchCapaTs()
+}
+
+/** Funnel 30d. Falla suave: null si las vistas no existen o el fetch falla. */
+export async function cargarKpisConversion(): Promise<{
+  global: KpisConversion
+  rubros: KpisConversionRubro[]
+} | null> {
+  try {
+    const [gRes, rRes] = await Promise.all([
+      supabase.from('v_kpis_conversion').select('*').limit(1),
+      supabase.from('v_kpis_conversion_rubro').select('*'),
+    ])
+    if (gRes.error || !gRes.data?.[0]) return null
+    const row = asRecord(gRes.data[0])
+    if (!row) return null
+    const rubros = asRecordList(rRes.error ? [] : rRes.data)
+      .map(parseConversionRubro)
+      .sort((a, b) => RUBRO_ORDEN.indexOf(a.rubro) - RUBRO_ORDEN.indexOf(b.rubro))
+    return { global: parseConversionCounts(row), rubros }
+  } catch {
+    return null
+  }
 }
 
 export function tendenciaPct(cur: number, prev: number): number {
