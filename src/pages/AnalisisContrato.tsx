@@ -21,7 +21,7 @@ import {
   type RiesgosContractuales,
   type TonoCond,
 } from '../lib/analisis'
-import { CierraPill, EstadoPill, ItPill } from '../components/Pills'
+import { CierraPill, EstadoPill, CatItIaPill } from '../components/Pills'
 import { ErrorBox, Skeleton } from '../components/ui'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { TimelineCard } from '../components/TimelineFishbone'
@@ -352,7 +352,7 @@ export default function AnalisisContrato() {
             <p className="text-xs text-slate-500">{ficha.entidad}</p>
             <div className="mt-2 flex flex-wrap gap-1">
               <EstadoPill estado={ficha.estado} />
-              {ficha.categoria_it && <ItPill cat={ficha.categoria_it} />}
+              <CatItIaPill categoria_it={ficha.categoria_it} relevancia_ia={ficha.relevancia_ia} />
               {ficha.fecha_fin_cotizacion && ficha.estado === 'Vigente' && (
                 <CierraPill label={cierre.label} tone={cierre.tone} />
               )}

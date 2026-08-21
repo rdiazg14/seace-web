@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../lib/rutaDia'
 import { nivelLabel } from '../lib/rutaDia'
 import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
-import { CierraPill, EstadoPill, ItPill, ObjetoPill } from './Pills'
+import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 
 function NivelPill({ nivel }: { nivel: Oportunidad['nivel'] }) {
   const label = nivelLabel(nivel)
@@ -75,7 +75,7 @@ export default function OportunidadCard({
           </span>
           <div className="flex min-w-0 flex-wrap gap-1">
             <NivelPill nivel={o.nivel} />
-            {c.categoria_it && <ItPill cat={c.categoria_it} />}
+            <CatItIaPill categoria_it={c.categoria_it} relevancia_ia={c.relevancia_ia} />
             <ObjetoPill objeto={c.objeto} />
             {cerrado ? (
               <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-500/25 dark:text-slate-300">
