@@ -53,15 +53,15 @@ export default function OportunidadCard({
   const c = o.contrato
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
-  const cerradoEval = c.estado === 'En Evaluación'
+  const cerrado = !o.postulable
   const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
   const analisisNavLock = useRef(false)
 
   return (
     <article
       className={`rounded-xl border bg-[var(--bg-card)] p-3.5 shadow-sm ${
-        cerradoEval
-          ? 'border-amber-500/40 dark:border-amber-500/30'
+        cerrado
+          ? 'border-slate-300 dark:border-slate-700'
           : o.urgente
             ? 'border-red-500/35 dark:border-red-500/25'
             : 'border-slate-200 dark:border-slate-800'
@@ -77,14 +77,14 @@ export default function OportunidadCard({
             <NivelPill nivel={o.nivel} />
             {c.categoria_it && <ItPill cat={c.categoria_it} />}
             <ObjetoPill objeto={c.objeto} />
-            {cerradoEval ? (
-              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                Cerrado / en evaluación
+            {cerrado ? (
+              <span className="rounded-full bg-slate-500/20 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-500/25 dark:text-slate-300">
+                {c.estado === 'En Evaluación' ? 'En evaluación' : 'Cerrado'}
               </span>
             ) : (
               <EstadoPill estado={c.estado} />
             )}
-            {c.fecha_fin_cotizacion && !cerradoEval && (
+            {c.fecha_fin_cotizacion && !cerrado && (
               <CierraPill label={cierre.label} tone={cierre.tone} />
             )}
           </div>
@@ -92,9 +92,11 @@ export default function OportunidadCard({
         <span className="shrink-0 font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
       </div>
 
-      {cerradoEval && (
-        <p className="mb-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-300">
-          Ventana de cotización cerrada — inteligencia de mercado, no postulable.
+      {cerrado && (
+        <p className="mb-1.5 rounded-md bg-slate-500/10 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400">
+          {c.estado === 'En Evaluación'
+            ? 'Ventana de cotización cerrada — en evaluación. Inteligencia de mercado, no postulable.'
+            : 'Ventana de cotización vencida — no postulable.'}
         </p>
       )}
 

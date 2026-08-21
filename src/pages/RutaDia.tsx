@@ -52,7 +52,7 @@ export default function RutaDia() {
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
   const [linea, setLinea] = useState<string | null>(null)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
-  const [estado, setEstado] = useState<FiltroEstado>('todos')
+  const [estado, setEstado] = useState<FiltroEstado>('postulable')
   const [mostrar, setMostrar] = useState(15)
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export default function RutaDia() {
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
 
-  const scored = useMemo(() => rankingActivo(raw.map(puntuar), today), [raw, today])
+  const scored = useMemo(() => rankingActivo(raw.map(puntuar)), [raw])
 
   const filtrado = useMemo(
     () => aplicarFiltros(scored, { nivel, linea, cierre, estado, today }),
@@ -85,13 +85,13 @@ export default function RutaDia() {
   )
 
   const brief = useMemo(
-    () => filtrado.filter(o => o.postulable).slice(0, 15),
-    [filtrado],
+    () => aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable', today }).slice(0, 15),
+    [scored, nivel, linea, cierre, today],
   )
 
   const kpis = useMemo(() => {
     const vigentes = scored.filter(o => o.postulable)
-    const nuevosHoy = raw.filter(c => dayOf(c.fecha_publica) === today).length
+    const nuevosHoy = vigentes.filter(o => dayOf(o.contrato.fecha_publica) === today).length
     let cierranHoy = 0
     let cierranManana = 0
     let cierranSemana = 0
@@ -115,7 +115,7 @@ export default function RutaDia() {
       else if (d <= weekEnd) cierranSemana += 1
     }
     return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel }
-  }, [scored, raw, today, tomorrow, weekEnd])
+  }, [scored, today, tomorrow, weekEnd])
 
   const visible: Oportunidad[] = filtrado.slice(0, mostrar)
   const hayMas = filtrado.length > mostrar
@@ -142,7 +142,7 @@ export default function RutaDia() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Kpi label="Nuevos hoy" value={kpis.nuevosHoy} hint="publicados 24 h" />
+          <Kpi label="Nuevos hoy" value={kpis.nuevosHoy} hint="postulables publicados hoy" />
           <Kpi label="Cierran hoy" value={kpis.cierranHoy} hint="vigentes" warn={kpis.cierranHoy > 0} />
           <Kpi label="Cierran mañana" value={kpis.cierranManana} hint="vigentes" warn={kpis.cierranManana > 0} />
           <Kpi label="Cierran esta semana" value={kpis.cierranSemana} hint="días 2–7" />
@@ -156,9 +156,9 @@ export default function RutaDia() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Brief del día · Top 15 vigentes</h2>
+          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Brief del día · Top 15 postulables</h2>
           <p className="text-[11px] text-slate-500">
-            Solo postulables. «En evaluación» no entra aquí — vive en el ranking, marcado como cerrado.
+            Solo postulables (vigente con ventana abierta). En evaluación y vencidos no entran aquí.
           </p>
         </div>
         {loading ? (
@@ -168,7 +168,7 @@ export default function RutaDia() {
         ) : brief.length === 0 ? (
           <EmptyState
             title="Sin vigentes con esos filtros"
-            hint="Prueba otro rubro o rango de cierre. El brief no incluye contratos en evaluación."
+            hint="Prueba otro rubro o rango de cierre. El brief no incluye en evaluación ni vencidos."
           />
         ) : (
           <div className="space-y-2">
@@ -183,7 +183,8 @@ export default function RutaDia() {
         <div>
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Ranking completo</h2>
           <p className="text-[11px] text-slate-500">
-            Ordenado por score. Nada se oculta: elige cuántos ver. {filtrado.length.toLocaleString('es-PE')} en vista actual.
+            Por defecto solo postulables. Usa el chip para ver en evaluación o cerrados.{' '}
+            {filtrado.length.toLocaleString('es-PE')} en vista actual.
           </p>
         </div>
 
@@ -226,10 +227,11 @@ export default function RutaDia() {
             ))}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <Chip active={estado === 'todos'} onClick={() => setEstado('todos')}>Todos los estados</Chip>
-            <Chip active={estado === 'Vigente'} tone="ok" onClick={() => setEstado('Vigente')}>Vigente (postulable)</Chip>
-            <Chip active={estado === 'En Evaluación'} tone="warn" onClick={() => setEstado('En Evaluación')}>
-              En evaluación (cerrado)
+            <Chip active={estado === 'postulable'} tone="ok" onClick={() => setEstado('postulable')}>
+              Postulables
+            </Chip>
+            <Chip active={estado === 'cerrados'} tone="warn" onClick={() => setEstado('cerrados')}>
+              En evaluación / cerrados
             </Chip>
           </div>
         </div>
