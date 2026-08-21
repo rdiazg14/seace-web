@@ -246,9 +246,9 @@ function ptsSenales(c: Contrato, altaIaReal: boolean): number {
 
 export function puntuar(c: Contrato): Oportunidad {
   const { nivel, overlay, altaIaReal } = clasificarNivel(c)
-  const postulable = c.estado === 'Vigente'
+  const postulable = esPostulable(c)
   const cierre = cierraEn(c.fecha_fin_cotizacion)
-  const vencidoVigente = postulable && cierre.days !== null && cierre.days < 0
+  const vencidoVigente = c.estado === 'Vigente' && cierre.days !== null && cierre.days < 0
   const urgente = postulable && (cierre.tone === 'hoy' || cierre.tone === 'manana')
 
   const rubro = nivel ? PTS_RUBRO[nivel] : 0
@@ -272,20 +272,26 @@ export function puntuar(c: Contrato): Oportunidad {
   }
 }
 
-export function rankingActivo(items: Oportunidad[], today = limaDateISO()): Oportunidad[] {
+/** Fuente de verdad: vigente con ventana abierta (día Lima) o sin fecha de cierre. */
+export function esPostulable(
+  contrato: Pick<Contrato, 'estado' | 'fecha_fin_cotizacion'>,
+  today = limaDateISO(),
+): boolean {
+  if (contrato.estado !== 'Vigente') return false
+  const d = dayOf(contrato.fecha_fin_cotizacion)
+  if (!d) return true
+  return d >= today
+}
+
+/** Universo puntuado: Vigente (incl. vencidos) + En Evaluación. El chip recorta postulable. */
+export function rankingActivo(items: Oportunidad[]): Oportunidad[] {
   return items
-    .filter(o => {
-      if (o.contrato.estado === 'En Evaluación') return true
-      if (!o.postulable) return false
-      const d = dayOf(o.contrato.fecha_fin_cotizacion)
-      if (!d) return true
-      return d >= today
-    })
+    .filter(o => o.contrato.estado === 'Vigente' || o.contrato.estado === 'En Evaluación')
     .sort((a, b) => b.score.total - a.score.total || a.contrato.id - b.contrato.id)
 }
 
 export type FiltroCierre = 'todos' | 'hoy' | 'semana' | 'mes'
-export type FiltroEstado = 'todos' | 'Vigente' | 'En Evaluación'
+export type FiltroEstado = 'postulable' | 'cerrados'
 
 export function aplicarFiltros(
   ranking: Oportunidad[],
@@ -301,7 +307,8 @@ export function aplicarFiltros(
   return ranking.filter(o => {
     if (opts.nivel && o.nivel !== opts.nivel) return false
     if (opts.linea && o.contrato.categoria_it !== opts.linea) return false
-    if (opts.estado !== 'todos' && o.contrato.estado !== opts.estado) return false
+    if (opts.estado === 'postulable' && !esPostulable(o.contrato, today)) return false
+    if (opts.estado === 'cerrados' && esPostulable(o.contrato, today)) return false
     if (opts.cierre !== 'todos') {
       const d = dayOf(o.contrato.fecha_fin_cotizacion)
       if (!d) return false
