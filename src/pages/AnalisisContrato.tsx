@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
@@ -246,6 +246,60 @@ export default function AnalisisContrato() {
   const [sinTdr, setSinTdr] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(isDesktopViewport)
 
+  const fetchAnalisis = useCallback(async (signal?: AbortSignal) => {
+    if (!Number.isFinite(contratoId) || contratoId <= 0) return
+    setLoading(true)
+    setError(null)
+    setError502(false)
+    setSinTdr(null)
+    setData(null)
+    try {
+      const res = await fetch(`${AI_PROXY}/analizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contrato_id: contratoId }),
+        signal,
+      })
+      let payload: AnalisisResponse & {
+        error?: string
+        respuesta?: string
+        status?: string
+        mensaje?: string
+      }
+      try {
+        payload = await res.json() as typeof payload
+      } catch {
+        if (signal?.aborted) return
+        if (res.status === 502) {
+          setError502(true)
+          return
+        }
+        throw new Error(`HTTP ${res.status}`)
+      }
+      if (signal?.aborted) return
+      if (res.status === 502 || payload.error === 'analisis_fallido') {
+        setError502(true)
+        return
+      }
+      if (res.status === 422 && payload.status === 'sin_tdr') {
+        setSinTdr(payload.mensaje || 'este contrato no tiene TDR suficiente para analizar')
+        return
+      }
+      if (!res.ok) {
+        throw new Error(payload.respuesta || payload.mensaje || `HTTP ${res.status}`)
+      }
+      if (payload.error && !payload.analisis) {
+        throw new Error(payload.mensaje || payload.error)
+      }
+      setData(payload)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError' || signal?.aborted) return
+      setError(e instanceof Error ? e.message : 'No se pudo analizar')
+    } finally {
+      if (!signal?.aborted) setLoading(false)
+    }
+  }, [contratoId])
+
   useEffect(() => {
     const ac = new AbortController()
     async function load() {
@@ -269,46 +323,16 @@ export default function AnalisisContrato() {
         if (!row) throw new Error('Contrato no encontrado')
         if (ac.signal.aborted) return
         setFicha(row as Contrato)
-
-        const res = await fetch(`${AI_PROXY}/analizar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contrato_id: contratoId }),
-          signal: ac.signal,
-        })
-        if (res.status === 502) {
-          if (ac.signal.aborted) return
-          setError502(true)
-          return
-        }
-        const payload = await res.json() as AnalisisResponse & {
-          error?: string
-          respuesta?: string
-          status?: string
-          mensaje?: string
-        }
-        if (ac.signal.aborted) return
-        if (res.status === 422 && payload.status === 'sin_tdr') {
-          setSinTdr(payload.mensaje || 'este contrato no tiene TDR suficiente para analizar')
-          return
-        }
-        if (!res.ok) {
-          throw new Error(payload.respuesta || payload.error || `HTTP ${res.status}`)
-        }
-        if (payload.error && !payload.analisis) {
-          throw new Error(payload.error)
-        }
-        setData(payload)
+        await fetchAnalisis(ac.signal)
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ac.signal.aborted) return
         setError(e instanceof Error ? e.message : 'No se pudo analizar')
-      } finally {
         if (!ac.signal.aborted) setLoading(false)
       }
     }
     void load()
     return () => { ac.abort() }
-  }, [contratoId])
+  }, [contratoId, fetchAnalisis])
 
   useEffect(() => {
     setChatOpen(isDesktopViewport())
@@ -378,17 +402,17 @@ export default function AnalisisContrato() {
       )}
 
       {error502 && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-[var(--text-primary)]">
           <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
             <div>
-              <p>El análisis no pudo completarse en este momento.</p>
+              <p className="font-medium">El análisis no pudo completarse en este momento.</p>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                El servicio de IA no respondió correctamente. Suele resolverse en segundos.
+                El servicio de IA no respondió correctamente. Suele resolverse en unos segundos.
               </p>
               <button
                 type="button"
-                onClick={() => window.location.reload()}
+                onClick={() => void fetchAnalisis()}
                 className="mt-3 rounded-lg bg-teal-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-400"
               >
                 Reintentar
