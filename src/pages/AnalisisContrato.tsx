@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import type { Contrato } from '../types'
@@ -610,6 +610,8 @@ export default function AnalisisContrato() {
           key={contratoId}
           contratoId={contratoId}
           nro={nro}
+          contratoTitulo={ficha ? tituloContrato(ficha) : ''}
+          categoriaIt={ficha?.categoria_it ?? undefined}
           chipsIniciales={a.chips_sugeridos ?? undefined}
           open={chatOpen}
           desktop={desktop}
@@ -634,12 +636,17 @@ const HISTORY_MAX_ITEMS = 8
 const HISTORY_MAX_CHARS = 500
 const STREAM_REVEAL_MS = 180
 
+interface EscenaClasificacion {
+  necesita_internet: boolean
+}
+
 interface EscenaMsg {
   id?: string
   role: 'user' | 'bot'
   text: string
   type?: 'error'
   escenario?: EscenarioPayload | null
+  clasificacion?: EscenaClasificacion
   error?: boolean
   limit?: boolean
   aviso?: boolean
@@ -659,6 +666,12 @@ type CotizarSseEvent = {
   token?: string
   escenario?: EscenarioPayload
   clasificacion?: unknown
+}
+
+function parseClasificacion(raw: unknown): EscenaClasificacion | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  return { necesita_internet: o.necesita_internet === true }
 }
 
 function newMsgId(): string {
@@ -681,6 +694,7 @@ function persistMsg(m: EscenaMsg): EscenaMsg {
     out.progress = true
     if (m.phase) out.phase = m.phase
   }
+  if (m.clasificacion) out.clasificacion = m.clasificacion
   return out
 }
 
@@ -959,6 +973,8 @@ function hydrateMsgs(parsed: unknown): EscenaMsg[] {
 function ChatEscenarios({
   contratoId,
   nro,
+  contratoTitulo,
+  categoriaIt,
   chipsIniciales,
   open,
   desktop,
@@ -970,6 +986,8 @@ function ChatEscenarios({
 }: {
   contratoId: number
   nro: string
+  contratoTitulo: string
+  categoriaIt?: string | null
   chipsIniciales?: string[]
   open: boolean
   desktop: boolean
@@ -979,6 +997,7 @@ function ChatEscenarios({
   onOpen: () => void
   onClose: () => void
 }) {
+  const navigate = useNavigate()
   const STORAGE_KEY = `chat_escenarios_${contratoId}`
   const [messages, setMessages] = useState<EscenaMsg[]>([])
   const [input, setInput] = useState('')
@@ -1090,6 +1109,15 @@ function ChatEscenarios({
     window.addEventListener('mouseup', onUp)
   }
 
+  function irChatRagConInternet(pregunta: string) {
+    const params = new URLSearchParams()
+    params.set('q', pregunta)
+    params.set('nro', nro)
+    params.set('titulo', contratoTitulo.slice(0, 160))
+    if (categoriaIt) params.set('cat', categoriaIt)
+    navigate(`/chat?${params.toString()}`)
+  }
+
   async function enviar(texto = input) {
     const q = texto.trim()
     if (!q || loading) return
@@ -1188,6 +1216,7 @@ function ChatEscenarios({
 
       type CotizarJson = {
         escenario?: EscenarioPayload
+        clasificacion?: unknown
         status?: string
         mensaje?: string
         error?: string
@@ -1234,6 +1263,7 @@ function ChatEscenarios({
           progress: true,
           text: botHistoryText(e),
           escenario: e,
+          clasificacion: parseClasificacion(payload.clasificacion),
           streamText: e.escenario,
           streamBuffer: undefined,
         })
@@ -1285,6 +1315,7 @@ function ChatEscenarios({
             progress: true,
             text: botHistoryText(e),
             escenario: e,
+            clasificacion: parseClasificacion(ev.clasificacion),
             streamText: e.escenario,
             streamBuffer: undefined,
           })
@@ -1375,7 +1406,16 @@ function ChatEscenarios({
             </p>
           )}
           <div className="space-y-3">
-            {messages.map((m) => (
+            {messages.map((m, idx) => {
+              const preguntaUsuario = idx > 0 && messages[idx - 1]?.role === 'user'
+                ? messages[idx - 1].text
+                : ''
+              const mostrarBuscarInternet = m.role === 'bot'
+                && !m.streaming
+                && m.clasificacion?.necesita_internet === true
+                && Boolean(m.escenario || m.streamText)
+                && Boolean(preguntaUsuario)
+              return (
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`min-w-0 max-w-[92%] ${m.role === 'user' ? '' : 'w-full'}`}>
                   {m.role === 'user' ? (
@@ -1414,11 +1454,20 @@ function ChatEscenarios({
                       ) : m.streamText ? (
                         <MarkdownRenderer content={m.streamText} className="text-sm" />
                       ) : null}
+                      {mostrarBuscarInternet && (
+                        <button
+                          type="button"
+                          onClick={() => irChatRagConInternet(preguntaUsuario)}
+                          className="mt-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:border-teal-400 hover:text-[var(--text-primary)]"
+                        >
+                          🔍 Buscar esto con internet
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
 
