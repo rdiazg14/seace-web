@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AI_PROXY, supabase } from '../lib/supabase'
 import type { Contrato, ContratoRef } from '../types'
 import { EstadoPill } from '../components/Pills'
@@ -129,8 +129,17 @@ function mensajeLimite(status: number, data: { respuesta?: string; response?: st
   return 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.'
 }
 
+function composeRagPrefill(q: string, nro: string, titulo: string, cat: string | null): string {
+  let ctx = nro ? `${nro} — ${titulo}` : titulo
+  if (cat) ctx += ` · ${cat}`
+  return ctx ? `[Contexto: ${ctx}] ${q}` : q
+}
+
 export default function Chat() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const prefillApplied = useRef(false)
+  const [prefillNro, setPrefillNro] = useState<string | null>(null)
   const [messages, setMessages] = useState<Msg[]>([{
     role: 'bot',
     text: 'Soy el asistente SEACE con IA. Busco en los Términos de Referencia reales de 2,330 contratos vigentes. Pregúntame sobre requisitos técnicos, especificaciones, plazos o cualquier detalle.',
@@ -139,6 +148,19 @@ export default function Chat() {
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (prefillApplied.current) return
+    const q = searchParams.get('q')?.trim()
+    if (!q) return
+    prefillApplied.current = true
+    const nro = searchParams.get('nro')?.trim() || ''
+    const titulo = searchParams.get('titulo')?.trim() || ''
+    const cat = searchParams.get('cat')?.trim() || null
+    setInput(composeRagPrefill(q, nro, titulo, cat))
+    if (nro) setPrefillNro(nro)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -381,6 +403,14 @@ export default function Chat() {
             </button>
           ))}
         </div>
+      )}
+
+      {prefillNro && (
+        <p className="pb-2 text-[11px] text-[var(--text-secondary)]">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
+            Continuando desde: {prefillNro}
+          </span>
+        </p>
       )}
 
       <form
