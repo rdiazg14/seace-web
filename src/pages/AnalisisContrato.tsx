@@ -635,6 +635,7 @@ const HISTORY_MAX_CHARS = 500
 const STREAM_REVEAL_MS = 180
 
 interface EscenaMsg {
+  id?: string
   role: 'user' | 'bot'
   text: string
   type?: 'error'
@@ -660,8 +661,13 @@ type CotizarSseEvent = {
   clasificacion?: unknown
 }
 
+function newMsgId(): string {
+  return crypto.randomUUID()
+}
+
 function persistMsg(m: EscenaMsg): EscenaMsg {
-  return {
+  const out: EscenaMsg = {
+    id: m.id,
     role: m.role,
     text: m.text,
     type: m.type,
@@ -671,6 +677,11 @@ function persistMsg(m: EscenaMsg): EscenaMsg {
     aviso: m.aviso,
     query: m.query,
   }
+  if (m.progress) {
+    out.progress = true
+    if (m.phase) out.phase = m.phase
+  }
+  return out
 }
 
 function hayMontosReales(e: EscenarioPayload): boolean {
@@ -697,8 +708,14 @@ function AnalizandoBlock({
   collapsed: boolean
 }) {
   const [open, setOpen] = useState(!collapsed)
+  const hasAutoCollapsedRef = useRef(false)
+
   useEffect(() => {
-    setOpen(!collapsed)
+    if (hasAutoCollapsedRef.current) return
+    if (collapsed) {
+      setOpen(false)
+      hasAutoCollapsedRef.current = true
+    }
   }, [collapsed])
 
   if (collapsed && !open) {
@@ -927,8 +944,15 @@ function hydrateMsgs(parsed: unknown): EscenaMsg[] {
   return parsed.slice(-20).map((m) => {
     if (!m || typeof m !== 'object') return null
     const row = m as EscenaMsg
+    if (!row.id) row.id = newMsgId()
     if (row.escenario) row.escenario = hydrateEscenario(row.escenario)
-    return persistMsg(row)
+    const saved = persistMsg(row)
+    // Mensajes completados previos al campo progress: reconstruir trace colapsado.
+    if (!saved.progress && saved.role === 'bot' && saved.escenario && !saved.error && !saved.limit && !saved.aviso) {
+      saved.progress = true
+      saved.phase = row.phase ?? 'redactar'
+    }
+    return saved
   }).filter((m): m is EscenaMsg => Boolean(m && (m.role === 'user' || m.role === 'bot')))
 }
 
@@ -1074,8 +1098,9 @@ function ChatEscenarios({
     setInput('')
     setMessages(m => [
       ...m,
-      { role: 'user', text: q },
+      { id: newMsgId(), role: 'user', text: q },
       {
+        id: newMsgId(),
         role: 'bot',
         text: '',
         streaming: true,
@@ -1206,7 +1231,7 @@ function ChatEscenarios({
         const e = hydrateEscenario(payload.escenario) ?? payload.escenario
         patchBot({
           streaming: false,
-          progress: false,
+          progress: true,
           text: botHistoryText(e),
           escenario: e,
           streamText: e.escenario,
@@ -1257,7 +1282,7 @@ function ChatEscenarios({
           const e = hydrateEscenario(ev.escenario) ?? ev.escenario
           patchBot({
             streaming: false,
-            progress: false,
+            progress: true,
             text: botHistoryText(e),
             escenario: e,
             streamText: e.escenario,
@@ -1276,7 +1301,9 @@ function ChatEscenarios({
     } catch (err) {
       setMessages(m => {
         const next = [...m]
+        const prev = next[next.length - 1]
         next[next.length - 1] = {
+          id: prev?.id ?? newMsgId(),
           role: 'bot',
           type: 'error',
           query: q,
@@ -1348,8 +1375,8 @@ function ChatEscenarios({
             </p>
           )}
           <div className="space-y-3">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {messages.map((m) => (
+              <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`min-w-0 max-w-[92%] ${m.role === 'user' ? '' : 'w-full'}`}>
                   {m.role === 'user' ? (
                     <p className="rounded-2xl rounded-br-sm bg-teal-500 px-3.5 py-2.5 text-sm text-white">{m.text}</p>
