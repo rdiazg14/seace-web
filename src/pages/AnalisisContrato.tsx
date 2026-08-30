@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
@@ -215,8 +215,31 @@ function CondCard({
   )
 }
 
-const CHAT_PANEL_W = 380
+const MIN_PANEL_W = 320
+const MAX_PANEL_W = 720
+const DEFAULT_PANEL_W = 380
+const CHAT_PANEL_STORAGE_KEY = 'seace_chat_panel_width'
 const DESKTOP_MQ = '(min-width: 1024px)'
+
+function maxPanelWidth(): number {
+  if (typeof window === 'undefined') return MAX_PANEL_W
+  return Math.min(MAX_PANEL_W, Math.floor(window.innerWidth * 0.5))
+}
+
+function clampPanelWidth(w: number): number {
+  return Math.min(maxPanelWidth(), Math.max(MIN_PANEL_W, w))
+}
+
+function readSavedPanelWidth(): number {
+  try {
+    const saved = localStorage.getItem(CHAT_PANEL_STORAGE_KEY)
+    if (saved) {
+      const n = Number(saved)
+      if (Number.isFinite(n) && n > 0) return clampPanelWidth(n)
+    }
+  } catch { /* quota / private mode */ }
+  return DEFAULT_PANEL_W
+}
 
 function isDesktopViewport(): boolean {
   return typeof window !== 'undefined' && window.matchMedia(DESKTOP_MQ).matches
@@ -245,6 +268,14 @@ export default function AnalisisContrato() {
   const [error502, setError502] = useState(false)
   const [sinTdr, setSinTdr] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(isDesktopViewport)
+  const [panelWidth, setPanelWidth] = useState<number>(() => readSavedPanelWidth())
+  const [panelResizing, setPanelResizing] = useState(false)
+
+  useEffect(() => {
+    const onResize = () => setPanelWidth(w => clampPanelWidth(w))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const fetchAnalisis = useCallback(async (signal?: AbortSignal) => {
     if (!Number.isFinite(contratoId) || contratoId <= 0) return
@@ -345,8 +376,8 @@ export default function AnalisisContrato() {
 
   return (
     <div
-      className="transition-[margin-right] duration-[250ms] ease-out"
-      style={{ marginRight: chatOpen && desktop ? CHAT_PANEL_W : 0 }}
+      className={panelResizing ? '' : 'transition-[margin-right] duration-[250ms] ease-out'}
+      style={{ marginRight: chatOpen && desktop ? panelWidth : 0 }}
     >
     <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -581,6 +612,10 @@ export default function AnalisisContrato() {
           nro={nro}
           chipsIniciales={a.chips_sugeridos ?? undefined}
           open={chatOpen}
+          desktop={desktop}
+          panelWidth={panelWidth}
+          onPanelWidthChange={setPanelWidth}
+          onPanelResizeActive={setPanelResizing}
           onOpen={() => setChatOpen(true)}
           onClose={() => setChatOpen(false)}
         />
@@ -597,6 +632,7 @@ const CHIPS_ESCENARIO = [
 
 const HISTORY_MAX_ITEMS = 8
 const HISTORY_MAX_CHARS = 500
+const STREAM_REVEAL_MS = 180
 
 interface EscenaMsg {
   role: 'user' | 'bot'
@@ -611,6 +647,8 @@ interface EscenaMsg {
   progress?: boolean
   phase?: 'clasificar' | 'contexto' | 'redactar'
   streamText?: string
+  /** Texto SSE acumulado antes del reveal (B5: colapsar antes de mostrar). */
+  streamBuffer?: string
 }
 
 type CotizarSseEvent = {
@@ -899,6 +937,10 @@ function ChatEscenarios({
   nro,
   chipsIniciales,
   open,
+  desktop,
+  panelWidth,
+  onPanelWidthChange,
+  onPanelResizeActive,
   onOpen,
   onClose,
 }: {
@@ -906,6 +948,10 @@ function ChatEscenarios({
   nro: string
   chipsIniciales?: string[]
   open: boolean
+  desktop: boolean
+  panelWidth: number
+  onPanelWidthChange: (w: number) => void
+  onPanelResizeActive: (active: boolean) => void
   onOpen: () => void
   onClose: () => void
 }) {
@@ -917,6 +963,7 @@ function ChatEscenarios({
   const [skipPersist, setSkipPersist] = useState(false)
   const [hintFab, setHintFab] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const streamRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chips = (chipsIniciales && chipsIniciales.length > 0)
     ? chipsIniciales.map(c => c.trim()).filter(Boolean).map(c => c.slice(0, 40))
     : CHIPS_ESCENARIO
@@ -927,6 +974,10 @@ function ChatEscenarios({
     setSkipPersist(false)
     setInput('')
     setLoading(false)
+    if (streamRevealTimer.current) {
+      clearTimeout(streamRevealTimer.current)
+      streamRevealTimer.current = null
+    }
     try {
       const saved = localStorage.getItem(`chat_escenarios_${contratoId}`)
       setMessages(saved ? hydrateMsgs(JSON.parse(saved)) : [])
@@ -935,6 +986,10 @@ function ChatEscenarios({
     }
     setReady(true)
   }, [contratoId])
+
+  useEffect(() => () => {
+    if (streamRevealTimer.current) clearTimeout(streamRevealTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!ready || skipPersist) return
@@ -985,6 +1040,32 @@ function ChatEscenarios({
     setMessages([])
   }
 
+  function onPanelResizeMouseDown(e: ReactMouseEvent) {
+    if (!desktop) return
+    e.preventDefault()
+    let latestW = panelWidth
+    onPanelResizeActive(true)
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: MouseEvent) => {
+      latestW = clampPanelWidth(window.innerWidth - ev.clientX)
+      onPanelWidthChange(latestW)
+    }
+
+    const onUp = () => {
+      document.body.style.userSelect = ''
+      onPanelResizeActive(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      try {
+        localStorage.setItem(CHAT_PANEL_STORAGE_KEY, String(latestW))
+      } catch { /* quota */ }
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   async function enviar(texto = input) {
     const q = texto.trim()
     if (!q || loading) return
@@ -1015,13 +1096,53 @@ function ChatEscenarios({
       })
     }
 
+    const scheduleStreamReveal = () => {
+      if (streamRevealTimer.current) return
+      streamRevealTimer.current = setTimeout(() => {
+        streamRevealTimer.current = null
+        patchBot(prev => {
+          if (!prev.streamBuffer) return prev
+          return {
+            ...prev,
+            streamText: (prev.streamText || '') + prev.streamBuffer,
+            streamBuffer: undefined,
+          }
+        })
+      }, STREAM_REVEAL_MS)
+    }
+
+    const flushStreamReveal = () => {
+      if (streamRevealTimer.current) {
+        clearTimeout(streamRevealTimer.current)
+        streamRevealTimer.current = null
+      }
+      patchBot(prev => {
+        if (!prev.streamBuffer) return prev
+        return {
+          ...prev,
+          streamText: (prev.streamText || '') + prev.streamBuffer,
+          streamBuffer: undefined,
+        }
+      })
+    }
+
+    if (streamRevealTimer.current) {
+      clearTimeout(streamRevealTimer.current)
+      streamRevealTimer.current = null
+    }
+
     const failBot = (text: string, extra: Partial<EscenaMsg> = {}) => {
+      if (streamRevealTimer.current) {
+        clearTimeout(streamRevealTimer.current)
+        streamRevealTimer.current = null
+      }
       patchBot({
         role: 'bot',
         text,
         streaming: false,
         progress: false,
         streamText: '',
+        streamBuffer: undefined,
         escenario: null,
         ...extra,
       })
@@ -1085,10 +1206,11 @@ function ChatEscenarios({
         const e = hydrateEscenario(payload.escenario) ?? payload.escenario
         patchBot({
           streaming: false,
-          progress: true,
+          progress: false,
           text: botHistoryText(e),
           escenario: e,
           streamText: e.escenario,
+          streamBuffer: undefined,
         })
       }
 
@@ -1114,21 +1236,32 @@ function ChatEscenarios({
           return
         }
         if (ev.type === 'text' && ev.token) {
-          patchBot(prev => ({
-            ...prev,
-            streamText: (prev.streamText || '') + ev.token,
-          }))
+          patchBot(prev => {
+            if (!prev.streamText) {
+              scheduleStreamReveal()
+              return {
+                ...prev,
+                streamBuffer: (prev.streamBuffer || '') + ev.token,
+              }
+            }
+            return {
+              ...prev,
+              streamText: (prev.streamText || '') + ev.token,
+            }
+          })
           return
         }
         if (ev.type === 'data' && ev.escenario) {
           gotData = true
+          flushStreamReveal()
           const e = hydrateEscenario(ev.escenario) ?? ev.escenario
           patchBot({
             streaming: false,
-            progress: true,
+            progress: false,
             text: botHistoryText(e),
             escenario: e,
             streamText: e.escenario,
+            streamBuffer: undefined,
           })
           return
         }
@@ -1173,12 +1306,22 @@ function ChatEscenarios({
       )}
 
       <aside
-        className={`fixed top-14 right-0 z-40 flex h-[calc(100dvh-3.5rem)] w-full flex-col border-l border-[var(--border)] bg-[var(--bg-card)] shadow-[-8px_0_24px_rgba(0,0,0,0.12)] transition-transform duration-[250ms] ease-out lg:w-[380px] ${
+        className={`fixed top-14 right-0 z-40 flex h-[calc(100dvh-3.5rem)] w-full flex-col border-l border-[var(--border)] bg-[var(--bg-card)] shadow-[-8px_0_24px_rgba(0,0,0,0.12)] transition-transform duration-[250ms] ease-out ${
           open ? 'translate-x-0' : 'pointer-events-none translate-x-full'
         }`}
+        style={desktop ? { width: panelWidth } : undefined}
         aria-hidden={!open}
         aria-label="Asistente del contrato"
       >
+        {desktop && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Redimensionar panel"
+            className="absolute left-0 top-0 z-50 h-full w-1.5 cursor-col-resize touch-none hover:bg-teal-500/20"
+            onMouseDown={onPanelResizeMouseDown}
+          />
+        )}
         <header className="flex shrink-0 items-start justify-between gap-2 border-b border-[var(--border)] px-3 py-2.5">
           <div className="min-w-0">
             <p className="text-sm font-medium text-[var(--text-primary)]">Asistente</p>
@@ -1236,7 +1379,7 @@ function ChatEscenarios({
                       {m.progress && (
                         <AnalizandoBlock
                           phase={m.phase}
-                          collapsed={Boolean(m.streamText || m.escenario)}
+                          collapsed={Boolean(m.streamBuffer || m.streamText || m.escenario)}
                         />
                       )}
                       {m.escenario ? (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
+import { esPostulable } from '../lib/rutaDia'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 
 export default function ContratoCard({
@@ -18,15 +19,23 @@ export default function ContratoCard({
   const items = itemsDe(c)
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
+  const postulable = esPostulable(c)
+  const vigenteVentanaCerrada = c.estado === 'Vigente' && !postulable
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:scale-[1.01] hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap gap-1">
-          <EstadoPill estado={c.estado} />
+          {vigenteVentanaCerrada ? (
+            <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+              Vigente (ventana cerrada)
+            </span>
+          ) : (
+            <EstadoPill estado={c.estado} />
+          )}
           <ObjetoPill objeto={c.objeto} />
           <CatItIaPill categoria_it={c.categoria_it} relevancia_ia={c.relevancia_ia} />
-          {c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
+          {postulable && c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
             <CierraPill label={cierre.label} tone={cierre.tone} />
           )}
         </div>
