@@ -9,6 +9,7 @@ import Chat from './pages/Chat'
 import Docs from './pages/Docs'
 import Login from './pages/Login'
 import Usuarios from './pages/Usuarios'
+import Observabilidad from './pages/Observabilidad'
 import RutaDia from './pages/RutaDia'
 import AnalisisContrato from './pages/AnalisisContrato'
 
@@ -27,6 +28,7 @@ function Shell() {
         <Route path="/chat" element={<RequireAuth><Chat /></RequireAuth>} />
         <Route path="/docs" element={<RequireAuth><Docs /></RequireAuth>} />
         <Route path="/usuarios" element={<RequireAuth admin><Usuarios /></RequireAuth>} />
+        <Route path="/observabilidad" element={<RequireAuth admin><Observabilidad /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
