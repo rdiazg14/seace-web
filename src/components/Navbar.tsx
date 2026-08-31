@@ -47,9 +47,14 @@ export default function Navbar() {
             </NavLink>
           ))}
           {isAdmin && (
-            <NavLink to="/usuarios" className={linkCls}>
-              Usuarios
-            </NavLink>
+            <>
+              <NavLink to="/observabilidad" className={linkCls}>
+                Observabilidad
+              </NavLink>
+              <NavLink to="/usuarios" className={linkCls}>
+                Usuarios
+              </NavLink>
+            </>
           )}
         </div>
 
@@ -100,9 +105,14 @@ export default function Navbar() {
             </NavLink>
           ))}
           {isAdmin && (
-            <NavLink to="/usuarios" className={linkCls} onClick={() => setOpen(false)}>
-              Usuarios
-            </NavLink>
+            <>
+              <NavLink to="/observabilidad" className={linkCls} onClick={() => setOpen(false)}>
+                Observabilidad
+              </NavLink>
+              <NavLink to="/usuarios" className={linkCls} onClick={() => setOpen(false)}>
+                Usuarios
+              </NavLink>
+            </>
           )}
           {perfil && (
             <p className="px-3 py-2 text-xs text-slate-500">
