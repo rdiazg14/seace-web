@@ -1460,7 +1460,7 @@ function ChatEscenarios({
                           onClick={() => irChatRagConInternet(preguntaUsuario)}
                           className="mt-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:border-teal-400 hover:text-[var(--text-primary)]"
                         >
-                          🔍 Buscar esto con internet
+                          🔎 Buscar en TDRs relacionados
                         </button>
                       )}
                     </div>
