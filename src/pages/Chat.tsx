@@ -230,7 +230,13 @@ export default function Chat() {
         } else if (ev.stage === 'done') {
           const refs = ev.contratos_referenciados ?? []
           const contratos = await loadContratos(refs)
-          patchLast({ text, refs, contratos, stage: undefined, query })
+          patchLast({
+            text: text.trim() ? text : 'No pude generar una respuesta.',
+            refs,
+            contratos,
+            stage: undefined,
+            query,
+          })
         } else if (ev.stage === 'error') {
           throw new Error(ev.message || 'error SSE')
         }
