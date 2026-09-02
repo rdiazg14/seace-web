@@ -65,7 +65,7 @@ async function buscar(termino, filtroEstado) {
 }`
 
 const CLAUDE_PROMPT = `Eres un asistente de contrataciones públicas del Perú (SEACE).
-Hay 76,250 contratos 2026 y un RAG sobre 2,330 vigentes (TDR + ítems CUBSO).
+Hay ~77 mil contratos 2026 y un RAG v2 (Gemini 1536) sobre TDR de vigentes.
 
 Búsqueda FTS:
 POST ${SUPABASE_URL}/rest/v1/rpc/buscar_contratos
@@ -138,7 +138,7 @@ export default function Docs() {
           </span>
         </div>
         <p className="mt-1 text-sm text-slate-500">
-          76,250 contratos SEACE 2026 + RAG sobre TDR de vigentes. Clave anon de solo lectura.
+          ~77 mil contratos SEACE 2026 + RAG v2 sobre TDR (Gemini). Clave anon de solo lectura.
         </p>
       </header>
 
@@ -184,14 +184,14 @@ export default function Docs() {
 
       <Section title="Búsqueda semántica (RAG)">
         <p className="text-sm text-slate-500">
-          Los TDR de contrataciones menores no se publican como PDF: el texto vive en la API de detalle
-          (desObjetoContrato + ítems CUBSO). Ese texto se parte en 9,074 chunks con embeddings
-          bge-base-en-v1.5 (768 dims) en pgvector. El chat embebe la pregunta, llama a
-          {' '}<code>buscar_tdr</code> y combina con FTS antes de Llama 3.3 70B.
+          En producción el chat RAG embebe con Gemini (1536 dims, RPC{' '}
+          <code>buscar_tdr_v2</code>) y genera con Gemini Flash en el Worker. El
+          RPC <code>buscar_tdr</code> de 768 dims (BGE) sigue existiendo como
+          legado; el ejemplo de abajo es ilustrativo, no el camino del SPA.
         </p>
         <Code code={CURL_TDR} />
         <p className="text-xs text-slate-400">
-          query_embedding debe tener 768 dimensiones. El ejemplo de arriba es ilustrativo.
+          query_embedding de <code>buscar_tdr</code> (legado) son 768 dims. El chat usa 1536.
         </p>
         <p className="text-sm text-slate-500">Chat RAG (recomendado):</p>
         <Code code={CURL_AI} />
@@ -209,7 +209,7 @@ export default function Docs() {
                 ['descripcion_contrato', 'Número / título CM-'],
                 ['descripcion', 'TDR (desObjetoContrato)'],
                 ['entidad / estado / objeto', 'Metadatos'],
-                ['categoria_it', '13 categorías por reglas'],
+                ['categoria_it', '13 categorías: keywords, luego Gemini si ambas etiquetas quedan NULL'],
                 ['relevancia_ia', 'ALTA · MEDIA · BAJA'],
                 ['nom_area_usuaria', 'Detalle de vigentes'],
                 ['items_json', 'Ítems CUBSO (JSONB)'],
