@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { Contrato } from '../types'
 import {
   addCalendarDays,
+  cierraHoyInstante,
   dayOf,
   fmtFechaLarga,
   limaDateISO,
@@ -77,19 +78,20 @@ export default function RutaDia() {
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
 
-  const scored = useMemo(() => rankingActivo(raw.map(puntuar)), [raw])
+  const scored = useMemo(() => rankingActivo(raw.map(c => puntuar(c))), [raw])
 
   const filtrado = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre, estado, today }),
-    [scored, nivel, linea, cierre, estado, today],
+    () => aplicarFiltros(scored, { nivel, linea, cierre, estado }),
+    [scored, nivel, linea, cierre, estado],
   )
 
   const brief = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable', today }).slice(0, 15),
-    [scored, nivel, linea, cierre, today],
+    () => aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable' }).slice(0, 15),
+    [scored, nivel, linea, cierre],
   )
 
   const kpis = useMemo(() => {
+    const ahora = new Date()
     const vigentes = scored.filter(o => o.postulable)
     const nuevosHoy = vigentes.filter(o => dayOf(o.contrato.fecha_publica) === today).length
     let cierranHoy = 0
@@ -108,11 +110,15 @@ export default function RutaDia() {
         if (o.contrato.categoria_it === 'Cloud/hosting') nucleoCloud += 1
         if (o.contrato.categoria_it === 'Desarrollo software') nucleoDev += 1
       }
-      const d = dayOf(o.contrato.fecha_fin_cotizacion)
-      if (!d) continue
-      if (d === today) cierranHoy += 1
-      else if (d === tomorrow) cierranManana += 1
-      else if (d <= weekEnd) cierranSemana += 1
+      const fin = o.contrato.fecha_fin_cotizacion
+      if (!fin) continue
+      if (cierraHoyInstante(fin, ahora)) cierranHoy += 1
+      else {
+        const d = dayOf(fin)
+        if (!d) continue
+        if (d === tomorrow) cierranManana += 1
+        else if (d <= weekEnd && d > today) cierranSemana += 1
+      }
     }
     return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel }
   }, [scored, today, tomorrow, weekEnd])
@@ -143,7 +149,7 @@ export default function RutaDia() {
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Kpi label="Nuevos hoy" value={kpis.nuevosHoy} hint="postulables publicados hoy" />
-          <Kpi label="Cierran hoy" value={kpis.cierranHoy} hint="vigentes" warn={kpis.cierranHoy > 0} />
+          <Kpi label="Cierran hoy" value={kpis.cierranHoy} hint="hasta medianoche Lima" warn={kpis.cierranHoy > 0} />
           <Kpi label="Cierran mañana" value={kpis.cierranManana} hint="vigentes" warn={kpis.cierranManana > 0} />
           <Kpi label="Cierran esta semana" value={kpis.cierranSemana} hint="días 2–7" />
           <Kpi
@@ -158,7 +164,7 @@ export default function RutaDia() {
         <div>
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Brief del día · Top 15 postulables</h2>
           <p className="text-[11px] text-slate-500">
-            Solo postulables (vigente con ventana abierta). En evaluación y vencidos no entran aquí.
+            Solo postulables (vigente con ventana abierta ahora). En evaluación, por abrir y vencidos no entran aquí.
           </p>
         </div>
         {loading ? (
@@ -168,7 +174,7 @@ export default function RutaDia() {
         ) : brief.length === 0 ? (
           <EmptyState
             title="Sin vigentes con esos filtros"
-            hint="Prueba otro rubro o rango de cierre. El brief no incluye en evaluación ni vencidos."
+            hint="Prueba otro rubro o rango de cierre. El brief no incluye por abrir, en evaluación ni vencidos."
           />
         ) : (
           <div className="space-y-2">
@@ -183,7 +189,7 @@ export default function RutaDia() {
         <div>
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Ranking completo</h2>
           <p className="text-[11px] text-slate-500">
-            Por defecto solo postulables. Usa el chip para ver en evaluación o cerrados.{' '}
+            Por defecto solo postulables. Usa el chip para ver por abrir, en evaluación o cerrados.{' '}
             {filtrado.length.toLocaleString('es-PE')} en vista actual.
           </p>
         </div>
@@ -229,6 +235,9 @@ export default function RutaDia() {
           <div className="flex flex-wrap gap-1.5">
             <Chip active={estado === 'postulable'} tone="ok" onClick={() => setEstado('postulable')}>
               Postulables
+            </Chip>
+            <Chip active={estado === 'por_abrir'} tone="accent" onClick={() => setEstado('por_abrir')}>
+              Por abrir
             </Chip>
             <Chip active={estado === 'cerrados'} tone="warn" onClick={() => setEstado('cerrados')}>
               En evaluación / cerrados

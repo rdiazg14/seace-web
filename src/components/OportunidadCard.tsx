@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../lib/rutaDia'
 import { nivelLabel } from '../lib/rutaDia'
-import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
+import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 
 function NivelPill({ nivel }: { nivel: Oportunidad['nivel'] }) {
@@ -53,7 +53,8 @@ export default function OportunidadCard({
   const c = o.contrato
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
-  const cerrado = !o.postulable
+  const porAbrir = o.porAbrir
+  const cerrado = !o.postulable && !porAbrir
   const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
   const analisisNavLock = useRef(false)
 
@@ -84,7 +85,10 @@ export default function OportunidadCard({
             ) : (
               <EstadoPill estado={c.estado} />
             )}
-            {c.fecha_fin_cotizacion && !cerrado && (
+            {porAbrir && c.fecha_ini_cotizacion && (
+              <CierraPill label={`Abre ${fmtFechaHora(c.fecha_ini_cotizacion)}`} tone="abre" />
+            )}
+            {c.fecha_fin_cotizacion && !cerrado && !porAbrir && (
               <CierraPill label={cierre.label} tone={cierre.tone} />
             )}
           </div>
@@ -92,6 +96,11 @@ export default function OportunidadCard({
         <span className="shrink-0 font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
       </div>
 
+      {porAbrir && c.fecha_ini_cotizacion && (
+        <p className="mb-1.5 rounded-md bg-violet-500/10 px-2 py-1 text-[11px] text-violet-800 dark:text-violet-300">
+          La ventana abre el {fmtFechaHora(c.fecha_ini_cotizacion)} (hora Lima). Aún no se puede postular.
+        </p>
+      )}
       {cerrado && (
         <p className="mb-1.5 rounded-md bg-slate-500/10 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400">
           {c.estado === 'En Evaluación'

@@ -27,7 +27,7 @@
  * integración / automatización / digital twin → Adyacente. Nunca degrada.
  */
 import type { Contrato } from '../types'
-import { cierraEn, dayOf, diffDays, limaDateISO } from './format'
+import { cierraEn, cierraHoyInstante, dayOf, diffDays, limaDateISO, parseIso } from './format'
 
 export type NivelRubro = 'nucleo' | 'adyacente' | 'oportunista' | 'marginal'
 
@@ -49,6 +49,7 @@ export interface Oportunidad {
   score: ScoreBreakdown
   urgente: boolean
   postulable: boolean
+  porAbrir: boolean
   veredicto: 'recomendado' | 'evaluar'
 }
 
@@ -223,9 +224,9 @@ export function clasificarNivel(c: Contrato): { nivel: NivelRubro | null; overla
   return { nivel, overlay, altaIaReal }
 }
 
-function ptsUrgencia(fechaFin: string | null, estado: string): number {
+function ptsUrgencia(fechaFin: string | null, estado: string, ahora = new Date()): number {
   if (estado !== 'Vigente') return 3
-  const u = cierraEn(fechaFin)
+  const u = cierraEn(fechaFin, ahora)
   if (u.days === null) return 3
   if (u.days < 0) return 0
   if (u.days === 0) return 10
@@ -245,16 +246,17 @@ function ptsSenales(c: Contrato, altaIaReal: boolean): number {
   return Math.min(10, n)
 }
 
-export function puntuar(c: Contrato): Oportunidad {
+export function puntuar(c: Contrato, ahora = new Date()): Oportunidad {
   const { nivel, overlay, altaIaReal } = clasificarNivel(c)
-  const postulable = esPostulable(c)
-  const cierre = cierraEn(c.fecha_fin_cotizacion)
+  const postulable = esPostulable(c, ahora)
+  const porAbrir = esPorAbrir(c, ahora)
+  const cierre = cierraEn(c.fecha_fin_cotizacion, ahora)
   const vencidoVigente = c.estado === 'Vigente' && cierre.days !== null && cierre.days < 0
   const urgente = postulable && (cierre.tone === 'hoy' || cierre.tone === 'manana')
 
   const rubro = nivel ? PTS_RUBRO[nivel] : 0
   const vigencia = postulable ? 25 : c.estado === 'En Evaluación' ? 12 : 0
-  const urgencia = vencidoVigente ? 0 : ptsUrgencia(c.fecha_fin_cotizacion, c.estado)
+  const urgencia = vencidoVigente ? 0 : ptsUrgencia(c.fecha_fin_cotizacion, c.estado, ahora)
   const senales = ptsSenales(c, altaIaReal)
   const total = Math.min(100, rubro + vigencia + urgencia + senales)
 
@@ -269,19 +271,46 @@ export function puntuar(c: Contrato): Oportunidad {
     score: { rubro, vigencia, urgencia, senales, total },
     urgente,
     postulable,
+    porAbrir,
     veredicto,
   }
 }
 
-/** Fuente de verdad: vigente con ventana abierta (día Lima) o sin fecha de cierre. */
+function instanteMs(iso: string | null): number | null {
+  return parseIso(iso)?.getTime() ?? null
+}
+
+/**
+ * Hasta B21 las fechas estaban 5h corridas y comparar el instante daba
+ * falsos negativos; por eso se comparaba el día Lima. Con las fechas
+ * corregidas el instante es el criterio correcto: un contrato que cierra
+ * hoy 15:08 no es postulable a las 22:52.
+ */
 export function esPostulable(
-  contrato: Pick<Contrato, 'estado' | 'fecha_fin_cotizacion'>,
-  today = limaDateISO(),
+  contrato: Pick<Contrato, 'estado' | 'fecha_fin_cotizacion' | 'fecha_ini_cotizacion'>,
+  ahora: Date = new Date(),
 ): boolean {
   if (contrato.estado !== 'Vigente') return false
-  const d = dayOf(contrato.fecha_fin_cotizacion)
-  if (!d) return true
-  return d >= today
+  const now = ahora.getTime()
+  const ini = instanteMs(contrato.fecha_ini_cotizacion)
+  if (ini != null && ini > now) return false
+  const fin = instanteMs(contrato.fecha_fin_cotizacion)
+  if (fin == null) return true
+  return fin >= now
+}
+
+/** Vigente cuya ventana de cotización todavía no abre (`fecha_ini` > ahora). */
+export function esPorAbrir(
+  contrato: Pick<Contrato, 'estado' | 'fecha_ini_cotizacion' | 'fecha_fin_cotizacion'>,
+  ahora: Date = new Date(),
+): boolean {
+  if (contrato.estado !== 'Vigente') return false
+  const now = ahora.getTime()
+  const ini = instanteMs(contrato.fecha_ini_cotizacion)
+  if (ini == null || ini <= now) return false
+  const fin = instanteMs(contrato.fecha_fin_cotizacion)
+  if (fin != null && fin < now) return false
+  return true
 }
 
 /** Universo puntuado: Vigente (incl. vencidos) + En Evaluación. El chip recorta postulable. */
@@ -292,7 +321,7 @@ export function rankingActivo(items: Oportunidad[]): Oportunidad[] {
 }
 
 export type FiltroCierre = 'todos' | 'hoy' | 'semana' | 'mes'
-export type FiltroEstado = 'postulable' | 'cerrados'
+export type FiltroEstado = 'postulable' | 'por_abrir' | 'cerrados'
 
 export function aplicarFiltros(
   ranking: Oportunidad[],
@@ -301,20 +330,24 @@ export function aplicarFiltros(
     linea: string | null
     cierre: FiltroCierre
     estado: FiltroEstado
-    today?: string
+    ahora?: Date
   },
 ): Oportunidad[] {
-  const today = opts.today ?? limaDateISO()
+  const ahora = opts.ahora ?? new Date()
+  const today = limaDateISO(ahora)
   return ranking.filter(o => {
     if (opts.nivel && o.nivel !== opts.nivel) return false
     if (opts.linea && o.contrato.categoria_it !== opts.linea) return false
-    if (opts.estado === 'postulable' && !esPostulable(o.contrato, today)) return false
-    if (opts.estado === 'cerrados' && esPostulable(o.contrato, today)) return false
+    if (opts.estado === 'postulable' && !esPostulable(o.contrato, ahora)) return false
+    if (opts.estado === 'por_abrir' && !esPorAbrir(o.contrato, ahora)) return false
+    if (opts.estado === 'cerrados' && (esPostulable(o.contrato, ahora) || esPorAbrir(o.contrato, ahora))) return false
     if (opts.cierre !== 'todos') {
-      const d = dayOf(o.contrato.fecha_fin_cotizacion)
+      const fin = o.contrato.fecha_fin_cotizacion
+      if (!fin) return false
+      if (opts.cierre === 'hoy') return cierraHoyInstante(fin, ahora)
+      const d = dayOf(fin)
       if (!d) return false
       const days = diffDays(today, d)
-      if (opts.cierre === 'hoy' && days !== 0) return false
       if (opts.cierre === 'semana' && (days < 0 || days > 7)) return false
       if (opts.cierre === 'mes' && (days < 0 || days > 30)) return false
     }
