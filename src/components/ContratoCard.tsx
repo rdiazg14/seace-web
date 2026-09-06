@@ -4,6 +4,7 @@ import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import { esPorAbrir, esPostulable } from '../lib/rutaDia'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
+import { BotonVerTdr, BTN_SEACE_SECUNDARIO } from './BotonVerTdr'
 
 export default function ContratoCard({
   c,
@@ -93,11 +94,16 @@ export default function ContratoCard({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        <BotonVerTdr
+          contratoId={c.id}
+          pdfArchivoId={c.pdf_archivo_id ?? null}
+          pdfStoragePath={c.pdf_storage_path}
+        />
         <a
           href={seaceUrl(c.id)}
           target="_blank"
           rel="noreferrer"
-          className="rounded-lg bg-teal-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-400"
+          className={BTN_SEACE_SECUNDARIO}
         >
           Ver en SEACE
         </a>

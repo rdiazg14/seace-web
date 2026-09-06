@@ -22,6 +22,7 @@ import {
   type TonoCond,
 } from '../lib/analisis'
 import { CierraPill, EstadoPill, CatItIaPill } from '../components/Pills'
+import { BotonVerTdr, BTN_SEACE_SECUNDARIO } from '../components/BotonVerTdr'
 import { ErrorBox, Skeleton } from '../components/ui'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { TimelineCard } from '../components/TimelineFishbone'
@@ -348,7 +349,7 @@ export default function AnalisisContrato() {
       try {
         const { data: row, error: err } = await supabase
           .from('contratos')
-          .select('id,nro_contratacion,descripcion_contrato,descripcion,entidad,estado,objeto,nom_area_usuaria,fecha_publica,fecha_fin_cotizacion,tipo_cotizacion,categoria_it,relevancia_ia')
+          .select('id,nro_contratacion,descripcion_contrato,descripcion,entidad,estado,objeto,nom_area_usuaria,fecha_publica,fecha_fin_cotizacion,tipo_cotizacion,categoria_it,relevancia_ia,pdf_archivo_id,pdf_storage_path')
           .eq('id', contratoId)
           .maybeSingle()
         if (err) throw err
@@ -387,14 +388,21 @@ export default function AnalisisContrato() {
           ← Ruta del día
         </Link>
         {ficha && (
-          <a
-            href={seaceUrl(ficha.id)}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg bg-teal-500 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-400"
-          >
-            Ver en SEACE
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <BotonVerTdr
+              contratoId={ficha.id}
+              pdfArchivoId={ficha.pdf_archivo_id ?? null}
+              pdfStoragePath={ficha.pdf_storage_path}
+            />
+            <a
+              href={seaceUrl(ficha.id)}
+              target="_blank"
+              rel="noreferrer"
+              className={BTN_SEACE_SECUNDARIO}
+            >
+              Ver en SEACE
+            </a>
+          </div>
         )}
       </div>
 
