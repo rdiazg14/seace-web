@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AI_PROXY, supabase } from '../lib/supabase'
+import { workerAuthHeaders } from '../lib/workerAuth'
 import type { Contrato, ContratoRef } from '../types'
 import { EstadoPill } from '../components/Pills'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
@@ -259,12 +260,13 @@ export default function Chat() {
     ])
     setLoading(true)
     try {
+      const headers = await workerAuthHeaders({
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      })
       const res = await fetch(AI_PROXY, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-        },
+        headers,
         body: JSON.stringify({ query: q, history }),
         signal: ac.signal,
       })

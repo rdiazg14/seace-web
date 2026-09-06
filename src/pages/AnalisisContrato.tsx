@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
+import { workerAuthHeaders } from '../lib/workerAuth'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import {
@@ -309,9 +310,10 @@ export default function AnalisisContrato() {
     setSinTdr(null)
     setData(null)
     try {
+      const headers = await workerAuthHeaders({ 'Content-Type': 'application/json' })
       const res = await fetch(`${AI_PROXY}/analizar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ contrato_id: contratoId }),
         signal,
       })
@@ -1252,13 +1254,14 @@ function ChatEscenarios({
     }
 
     try {
+      const headers = await workerAuthHeaders({
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(contratoId ? { 'X-Contrato-Id': String(contratoId) } : {}),
+      })
       const res = await fetch(`${AI_PROXY}/cotizar`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...(contratoId ? { 'X-Contrato-Id': String(contratoId) } : {}),
-        },
+        headers,
         body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
       })
       const ct = res.headers.get('content-type') || ''
