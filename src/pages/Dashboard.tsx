@@ -241,7 +241,7 @@ export default function Dashboard() {
           <div>
             <h1 className="text-xl text-slate-900 sm:text-2xl dark:text-slate-50">Monitor SEACE</h1>
             <p className="text-sm text-slate-500">
-              Tablero de negocio ENERTRONIC · postulable = Vigente con ventana abierta (día Lima)
+              Tablero de negocio ENERTRONIC · postulable = Vigente con ventana abierta ahora
             </p>
           </div>
           <p className="text-xs capitalize text-slate-400">

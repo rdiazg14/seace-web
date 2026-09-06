@@ -1,21 +1,24 @@
 /**
  * Capa semántica ENERTRONIC (Dashboard).
  * Preferencia: vistas SQL (v_contratos_estado / v_kpis_*).
- * Fallback: mismas reglas en TS (esPostulable + clasificarNivel) si las
+ * Fallback: mismas reglas en TS (esPostulable por instante + clasificarNivel) si las
  * vistas aún no están aplicadas.
  *
- * Día Lima = limaDateISO / timezone America/Lima.
+ * Postulable = instante (fecha_ini/fin vs now), igual que las vistas SQL
+ * (v_contratos_estado / v_kpis_*, B22). Día Lima solo en tramos de cierre.
  * Rubro = clasificarNivel() ≡ fn_rubro_energetic en capa_semantica.sql
  */
 import { supabase } from './supabase'
 import type { Contrato } from '../types'
 import {
   addCalendarDays,
+  cierraHoyInstante,
   dayOf,
   limaDateISO,
 } from './format'
 import {
   clasificarNivel,
+  esPorAbrir,
   esPostulable,
   RUTA_DIA_COLS,
   type NivelRubro,
@@ -155,17 +158,19 @@ function asRubros(raw: unknown): RubroAggRow[] {
     .filter((x) => x.total > 0)
 }
 
-function marcar(c: Contrato, today = limaDateISO()): ContratoEstado {
+function marcar(c: Contrato, ahora = new Date()): ContratoEstado {
+  const today = limaDateISO(ahora)
   const d = dayOf(c.fecha_fin_cotizacion)
   const pub = dayOf(c.fecha_publica)
-  const postulable = esPostulable(c, today)
+  const postulable = esPostulable(c, ahora)
+  const porAbrir = esPorAbrir(c, ahora)
   const { nivel } = clasificarNivel(c)
   return {
     ...c,
     es_postulable: postulable,
-    es_vigente_ventana_vencida: c.estado === 'Vigente' && !postulable,
+    es_vigente_ventana_vencida: c.estado === 'Vigente' && !postulable && !porAbrir,
     es_en_evaluacion: c.estado === 'En Evaluación',
-    cierra_hoy: postulable && d === today,
+    cierra_hoy: postulable && cierraHoyInstante(c.fecha_fin_cotizacion, ahora),
     cierra_manana: postulable && d === addCalendarDays(today, 1),
     cierra_semana: postulable && !!d && d >= addCalendarDays(today, 2) && d <= addCalendarDays(today, 7),
     cierra_7d: postulable && !!d && d >= today && d <= addCalendarDays(today, 7),
@@ -382,8 +387,8 @@ async function fetchCapaTs(): Promise<CapaSemantica> {
   if (vig.error) throw vig.error
   const vigentes = asRecordList(vig.data) as unknown as Contrato[]
   const evaluacion = evalRows.error ? [] : asRecordList(evalRows.data) as unknown as Contrato[]
-  const markedVig = vigentes.map((c) => marcar(c, today))
-  const markedEval = evaluacion.map((c) => marcar(c, today))
+  const markedVig = vigentes.map((c) => marcar(c))
+  const markedEval = evaluacion.map((c) => marcar(c))
   const { kpis, negocio } = kpisDe(markedVig, {
     en_evaluacion: enEval,
     altas_it_7d: altas7,

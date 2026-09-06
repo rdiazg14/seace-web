@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Contrato } from '../types'
-import { cierraEn, fmtFecha, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
-import { esPostulable } from '../lib/rutaDia'
+import { cierraEn, fmtFecha, fmtFechaHora, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
+import { esPorAbrir, esPostulable } from '../lib/rutaDia'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 
 export default function ContratoCard({
@@ -20,7 +20,8 @@ export default function ContratoCard({
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
   const postulable = esPostulable(c)
-  const vigenteVentanaCerrada = c.estado === 'Vigente' && !postulable
+  const porAbrir = esPorAbrir(c)
+  const vigenteVentanaCerrada = c.estado === 'Vigente' && !postulable && !porAbrir
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:scale-[1.01] hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
@@ -35,6 +36,9 @@ export default function ContratoCard({
           )}
           <ObjetoPill objeto={c.objeto} />
           <CatItIaPill categoria_it={c.categoria_it} relevancia_ia={c.relevancia_ia} />
+          {porAbrir && c.fecha_ini_cotizacion && (
+            <CierraPill label={`Abre ${fmtFechaHora(c.fecha_ini_cotizacion)}`} tone="abre" />
+          )}
           {postulable && c.fecha_fin_cotizacion && c.estado === 'Vigente' && (
             <CierraPill label={cierre.label} tone={cierre.tone} />
           )}

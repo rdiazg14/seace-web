@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import type { Contrato } from '../types'
-import { cierraEn, fmtFecha, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
+import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import {
   labelCalifica,
   labelModalidad,
@@ -27,6 +27,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { TimelineCard } from '../components/TimelineFishbone'
 import { ChatTable } from '../components/ChatTable'
 import { ChatChart } from '../components/ChatChart'
+import { esPorAbrir } from '../lib/rutaDia'
 import {
   AlternativasBlock,
   ComponentesTabs,
@@ -371,6 +372,7 @@ export default function AnalisisContrato() {
 
   const a = data?.analisis
   const cierre = cierraEn(ficha?.fecha_fin_cotizacion ?? null)
+  const porAbrir = ficha ? esPorAbrir(ficha) : false
 
   const nro = ficha ? nroContrato(ficha) : (data?.nro || `Contrato ${id}`)
 
@@ -408,7 +410,10 @@ export default function AnalisisContrato() {
             <div className="mt-2 flex flex-wrap gap-1">
               <EstadoPill estado={ficha.estado} />
               <CatItIaPill categoria_it={ficha.categoria_it} relevancia_ia={ficha.relevancia_ia} />
-              {ficha.fecha_fin_cotizacion && ficha.estado === 'Vigente' && (
+              {porAbrir && ficha.fecha_ini_cotizacion && (
+                <CierraPill label={`Abre ${fmtFechaHora(ficha.fecha_ini_cotizacion)}`} tone="abre" />
+              )}
+              {ficha.fecha_fin_cotizacion && ficha.estado === 'Vigente' && !porAbrir && (
                 <CierraPill label={cierre.label} tone={cierre.tone} />
               )}
               {data?.urgente && (

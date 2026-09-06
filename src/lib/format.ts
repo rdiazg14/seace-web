@@ -29,6 +29,38 @@ export function diffDays(fromIso: string, toIso: string): number {
   return Math.round((b - a) / 86400000)
 }
 
+export function parseIso(iso: string | null | undefined): Date | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Fin del día calendario Lima (Perú sin DST, UTC−5). */
+export function limaEndOfDay(now = new Date()): Date {
+  return new Date(`${limaDateISO(now)}T23:59:59.999-05:00`)
+}
+
+export function fmtHora(iso: string | Date): string {
+  const d = typeof iso === 'string' ? new Date(iso) : iso
+  return d.toLocaleTimeString('es-PE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: TZ,
+  })
+}
+
+export function fmtFechaHora(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const fecha = d.toLocaleDateString('es-PE', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: TZ,
+  }).replace('.', '')
+  return `${fecha} ${fmtHora(d)}`
+}
+
 export function fmtFecha(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('es-PE', {
@@ -37,6 +69,14 @@ export function fmtFecha(iso: string | null): string {
     year: 'numeric',
     timeZone: TZ,
   })
+}
+
+/** `fecha_fin` entre ahora y el fin del día Lima de hoy. */
+export function cierraHoyInstante(iso: string | null, ahora = new Date()): boolean {
+  const fin = parseIso(iso)
+  if (!fin) return false
+  const t = fin.getTime()
+  return t >= ahora.getTime() && t <= limaEndOfDay(ahora).getTime()
 }
 
 export function fmtFechaLarga(d = new Date()): string {
@@ -64,17 +104,36 @@ export function haceCuanto(iso: string | null): string {
 
 export type UrgenciaTone = 'hoy' | 'manana' | 'semana' | 'mes' | 'ok' | 'vencido' | 'sin'
 
-export function cierraEn(iso: string | null): { label: string; tone: UrgenciaTone; days: number | null } {
+export function cierraEn(
+  iso: string | null,
+  ahora = new Date(),
+): { label: string; tone: UrgenciaTone; days: number | null } {
+  const fin = parseIso(iso)
+  if (!fin) return { label: 'sin fecha', tone: 'sin', days: null }
   const day = dayOf(iso)
-  if (!day) return { label: 'sin fecha', tone: 'sin', days: null }
-  const today = limaDateISO()
-  const days = diffDays(today, day)
-  if (days < 0) return { label: 'vencido', tone: 'vencido', days }
-  if (days === 0) return { label: 'hoy', tone: 'hoy', days }
-  if (days === 1) return { label: 'mañana', tone: 'manana', days }
-  if (days <= 7) return { label: `${days} días`, tone: 'semana', days }
-  if (days <= 30) return { label: `${days} días`, tone: 'mes', days }
-  return { label: `${days} días`, tone: 'ok', days }
+  const today = limaDateISO(ahora)
+  const daysCal = day ? diffDays(today, day) : null
+  const ms = fin.getTime() - ahora.getTime()
+  if (ms < 0) return { label: 'Cerrado', tone: 'vencido', days: -1 }
+
+  if (ms < 24 * 3600 * 1000) {
+    const mins = Math.max(1, Math.round(ms / 60_000))
+    const label = mins < 60 ? `Cierra en ${mins}min` : `Cierra en ${Math.max(1, Math.round(mins / 60))}h`
+    return { label, tone: 'hoy', days: daysCal ?? 0 }
+  }
+  if (ms < 48 * 3600 * 1000) {
+    return { label: `Cierra mañana ${fmtHora(fin)}`, tone: 'manana', days: daysCal ?? 1 }
+  }
+
+  const diaMes = fin.toLocaleDateString('es-PE', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: TZ,
+  }).replace('.', '')
+  const label = `Cierra el ${diaMes}`
+  if (daysCal !== null && daysCal <= 7) return { label, tone: 'semana', days: daysCal }
+  if (daysCal !== null && daysCal <= 30) return { label, tone: 'mes', days: daysCal }
+  return { label, tone: 'ok', days: daysCal }
 }
 
 export function nroContrato(c: Pick<Contrato, 'descripcion_contrato' | 'nro_contratacion' | 'id'>): string {
