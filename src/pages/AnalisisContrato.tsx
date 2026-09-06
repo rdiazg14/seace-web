@@ -11,6 +11,7 @@ import {
   labelVeredicto,
   soles,
   escenarioMuestraCifras,
+  ANALISIS_PROMPT_VERSION,
   type AnalisisResponse,
   type ClausulaCritica,
   type EntregableContractual,
@@ -61,6 +62,27 @@ function labelPlazoRef(r?: EntregableContractual['plazo_referencia']): string {
   if (r === 'desde_conclusion') return 'Desde conclusión'
   if (r === 'otro') return 'Otro'
   return '—'
+}
+
+function pdfHashFicha(c: Pick<Contrato, 'pdf_hash'>): string {
+  return (c.pdf_hash || '').trim() || 'na'
+}
+
+async function leerAnalisisPersistido(
+  contratoId: number,
+  pdfHash: string,
+): Promise<AnalisisResponse | null> {
+  const { data, error } = await supabase
+    .from('analisis_contrato')
+    .select('payload, creado_utc')
+    .eq('contrato_id', contratoId)
+    .eq('pdf_hash', pdfHash)
+    .eq('prompt_version', ANALISIS_PROMPT_VERSION)
+    .maybeSingle()
+  if (error || !data?.payload || typeof data.payload !== 'object') return null
+  const payload = data.payload as AnalisisResponse
+  if (!payload.analisis) return null
+  return { ...payload, analizado_utc: data.creado_utc ?? payload.analizado_utc }
 }
 
 function RequisitosBlock({ r }: { r: RequisitosProveedor }) {
@@ -349,13 +371,23 @@ export default function AnalisisContrato() {
       try {
         const { data: row, error: err } = await supabase
           .from('contratos')
-          .select('id,nro_contratacion,descripcion_contrato,descripcion,entidad,estado,objeto,nom_area_usuaria,fecha_publica,fecha_fin_cotizacion,tipo_cotizacion,categoria_it,relevancia_ia,pdf_archivo_id,pdf_storage_path')
+          .select('id,nro_contratacion,descripcion_contrato,descripcion,entidad,estado,objeto,nom_area_usuaria,fecha_publica,fecha_fin_cotizacion,tipo_cotizacion,categoria_it,relevancia_ia,pdf_archivo_id,pdf_storage_path,pdf_hash')
           .eq('id', contratoId)
           .maybeSingle()
         if (err) throw err
         if (!row) throw new Error('Contrato no encontrado')
         if (ac.signal.aborted) return
         setFicha(row as Contrato)
+        const persistido = await leerAnalisisPersistido(
+          (row as Contrato).id,
+          pdfHashFicha(row as Contrato),
+        )
+        if (ac.signal.aborted) return
+        if (persistido) {
+          setData(persistido)
+          setLoading(false)
+          return
+        }
         await fetchAnalisis(ac.signal)
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ac.signal.aborted) return
@@ -435,6 +467,11 @@ export default function AnalisisContrato() {
               {ficha.fecha_fin_cotizacion && <> · Cierre {fmtFecha(ficha.fecha_fin_cotizacion)}</>}
               {ficha.tipo_cotizacion && <> · Tipo cotiz. {ficha.tipo_cotizacion}</>}
             </p>
+            {data?.analizado_utc && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Analizado el {fmtFecha(data.analizado_utc)}
+              </p>
+            )}
           </>
         )}
       </header>

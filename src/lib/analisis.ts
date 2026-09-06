@@ -1,5 +1,8 @@
 export const TECHO_8_UIT_SOLES = 42800
 
+/** Debe coincidir con seace-ai-proxy ANALISIS_PROMPT_VERSION. Subir a mano si cambia el schema. */
+export const ANALISIS_PROMPT_VERSION = '1'
+
 export type RubroAnalisis = 'nucleo' | 'adyacente' | 'oportunista' | 'marginal' | 'desconocido'
 export type Califica = 'si' | 'justo' | 'no' | 'insuficiente_info'
 export type Modalidad = 'remoto' | 'presencial' | 'mixto' | 'no_consta'
@@ -173,6 +176,7 @@ export interface AnalisisResponse {
   techo_soles: number
   urgente: boolean
   analisis: AnalisisPayload
+  analizado_utc?: string | null
   error?: string
 }
 
