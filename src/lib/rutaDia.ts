@@ -145,7 +145,7 @@ const KW_INTEGRACION = [
   'automatizacion',
 ]
 
-export const RUTA_DIA_COLS = [
+export const RUTA_DIA_BASE_COLS = [
   'id',
   'nro_contratacion',
   'descripcion_contrato',
@@ -161,6 +161,12 @@ export const RUTA_DIA_COLS = [
   'categoria_it',
   'relevancia_ia',
   'nom_area_usuaria',
+] as const
+
+export const RUTA_DIA_COLS = [
+  ...RUTA_DIA_BASE_COLS,
+  'pdf_archivo_id',
+  'pdf_storage_path',
 ].join(',')
 
 export function nivelLabel(nivel: NivelRubro | null): string {

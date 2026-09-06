@@ -20,6 +20,7 @@ import {
   clasificarNivel,
   esPorAbrir,
   esPostulable,
+  RUTA_DIA_BASE_COLS,
   RUTA_DIA_COLS,
   type NivelRubro,
 } from './rutaDia'
@@ -106,7 +107,7 @@ export interface KpisConversionRubro extends KpisConversion {
   rubro: RubroAgg
 }
 
-const ESTADO_COLS = `${RUTA_DIA_COLS},es_postulable,es_vigente_ventana_vencida,es_en_evaluacion,cierra_hoy,cierra_manana,cierra_semana,cierra_7d,es_nuevo_hoy,rubro`
+const ESTADO_COLS = `${RUTA_DIA_BASE_COLS.join(',')},es_postulable,es_vigente_ventana_vencida,es_en_evaluacion,cierra_hoy,cierra_manana,cierra_semana,cierra_7d,es_nuevo_hoy,rubro`
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null

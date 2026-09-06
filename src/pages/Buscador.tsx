@@ -49,6 +49,20 @@ export default function Buscador() {
         if (objetos.length > 1) list = list.filter(r => objetos.includes(r.objeto))
         if (estados.length > 1) list = list.filter(r => estados.includes(r.estado))
         if (cats.length) list = list.filter(r => r.categoria_it && cats.includes(r.categoria_it))
+        const ids = list.map(r => r.id)
+        if (ids.length) {
+          const { data: extra } = await supabase
+            .from('contratos')
+            .select('id,pdf_archivo_id,pdf_storage_path')
+            .in('id', ids)
+          const byId = new Map((extra ?? []).map(x => [x.id as number, x]))
+          list = list.map(r => {
+            const e = byId.get(r.id)
+            return e
+              ? { ...r, pdf_archivo_id: e.pdf_archivo_id, pdf_storage_path: e.pdf_storage_path }
+              : r
+          })
+        }
         const from = (p - 1) * 20
         setTotal(list.length)
         setRows(list.slice(from, from + 20))

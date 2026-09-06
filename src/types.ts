@@ -23,6 +23,8 @@ export interface Contrato {
   categoria_it: string | null
   relevancia_ia: string | null
   nom_area_usuaria?: string | null
+  pdf_archivo_id?: number | null
+  pdf_storage_path?: string | null
   items_json?: ItemCubso[] | null
   detalle_cargado?: boolean | null
   rank?: number
