@@ -5,6 +5,7 @@ export const IT_CHIPS = [
   { id: 'Cloud/hosting', label: 'Cloud' },
   { id: 'Ciberseguridad', label: 'Ciberseguridad' },
   { id: 'IA/analytics', label: 'IA' },
+  { id: 'Telemetria/OT', label: 'Telemetría/OT' },
   { id: 'Redes/cableado', label: 'Redes' },
   { id: 'Base de datos/ERP', label: 'BD/ERP' },
   { id: 'Microsoft', label: 'Microsoft' },
