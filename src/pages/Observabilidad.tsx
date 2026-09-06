@@ -47,6 +47,62 @@ function fmtTs(iso: string | null): string {
   return d.toLocaleString('es-PE')
 }
 
+function fmtDate(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return isoDate
+  return d.toLocaleDateString('es-PE', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function diasDesde(isoDate: string): number {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return 0
+  const hoy = new Date()
+  const utcHoy = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const utcVer = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  return Math.floor((utcHoy - utcVer) / 86_400_000)
+}
+
+function CubsoCard({
+  version,
+  items,
+  cargado,
+}: {
+  version: string
+  items: number | null
+  cargado: string | null
+}) {
+  const dias = diasDesde(version)
+  const alerta = dias > 365
+  return (
+    <div
+      className={
+        alerta
+          ? 'rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300'
+          : 'rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800'
+      }
+    >
+      <p className="font-medium">
+        {alerta ? 'Catálogo CUBSO desactualizado' : 'Versión cargada'}
+      </p>
+      <p className="mt-1">
+        Versión {fmtDate(version)}
+        {items != null ? ` · ${items.toLocaleString('es-PE')} ítems` : ''}
+        {` · ${dias.toLocaleString('es-PE')} días`}
+      </p>
+      {cargado && (
+        <p className="mt-1 text-xs text-slate-500">Cargado {fmtTs(cargado)}</p>
+      )}
+      {alerta && (
+        <p className="mt-2">
+          Catalogo CUBSO desactualizado. Descargar la version vigente en
+          gob.pe/oece -&gt; Publicaciones del SEACE -&gt; Documentos de orientacion
+          (SEACE) -&gt; filtro CUBSO, y recargar con scripts/cargar_cubso.py
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function Observabilidad() {
   const { session } = useAuth()
   const { theme } = useTheme()
@@ -63,6 +119,14 @@ export default function Observabilidad() {
   const [tipoTotal, setTipoTotal] = useState(0)
   const [tipoErr, setTipoErr] = useState<string | null>(null)
   const [tipoLoading, setTipoLoading] = useState(true)
+
+  const [cubso, setCubso] = useState<{
+    version_catalogo: string
+    items: number | null
+    cargado_utc: string | null
+  } | null>(null)
+  const [cubsoErr, setCubsoErr] = useState<string | null>(null)
+  const [cubsoLoading, setCubsoLoading] = useState(true)
 
   async function loadStats() {
     setStatsLoading(true)
@@ -132,9 +196,37 @@ export default function Observabilidad() {
     setTipoLoading(false)
   }
 
+  async function loadCubso() {
+    setCubsoLoading(true)
+    setCubsoErr(null)
+    const { data, error } = await supabase
+      .from('cubso_version')
+      .select('version_catalogo, items, cargado_utc')
+      .eq('id', 1)
+      .maybeSingle()
+    if (error) {
+      setCubsoErr(error.message)
+      setCubso(null)
+      setCubsoLoading(false)
+      return
+    }
+    if (!data?.version_catalogo) {
+      setCubso(null)
+      setCubsoLoading(false)
+      return
+    }
+    setCubso({
+      version_catalogo: data.version_catalogo,
+      items: typeof data.items === 'number' ? data.items : null,
+      cargado_utc: data.cargado_utc ?? null,
+    })
+    setCubsoLoading(false)
+  }
+
   useEffect(() => {
     void loadStats()
     void loadTipos()
+    void loadCubso()
     // session.access_token basta; no re-fetch en cada render del objeto session
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token])
@@ -194,6 +286,27 @@ export default function Observabilidad() {
           )}
         </div>
       )}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Catálogo CUBSO</h2>
+        {cubsoErr && <ErrorBox retry={() => void loadCubso()}>{cubsoErr}</ErrorBox>}
+        {cubsoLoading ? (
+          <Skeleton className="h-28 w-full" />
+        ) : !cubso ? (
+          cubsoErr ? null : (
+            <EmptyState
+              title="Sin versión cargada"
+              hint="scripts/cargar_cubso.py escribe cubso_version (id=1)."
+            />
+          )
+        ) : (
+          <CubsoCard
+            version={cubso.version_catalogo}
+            items={cubso.items}
+            cargado={cubso.cargado_utc}
+          />
+        )}
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Cupos y caché (hoy UTC)</h2>
