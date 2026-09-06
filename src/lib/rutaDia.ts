@@ -14,7 +14,7 @@
  * Modalidad / pago / margen / plazo / penalidades = 0 hasta fase #10.
  *
  * Mapeo categoria_it → 4 niveles (aprobado):
- *   Núcleo      IA/analytics, Cloud/hosting, Desarrollo software
+ *   Núcleo      IA/analytics, Cloud/hosting, Desarrollo software, Telemetria/OT
  *   Adyacente   Base de datos/ERP, Oracle
  *   Oportunista Soporte, Redes, Licencias, Ciberseguridad (candidato a subir),
  *               Microsoft, Correo, Firma digital
@@ -64,6 +64,7 @@ export const LINEA_CHIPS: { id: string; label: string }[] = [
   { id: 'IA/analytics', label: 'IA' },
   { id: 'Cloud/hosting', label: 'Cloud' },
   { id: 'Desarrollo software', label: 'Desarrollo' },
+  { id: 'Telemetria/OT', label: 'Telemetría/OT' },
   { id: 'Base de datos/ERP', label: 'BD/ERP' },
   { id: 'Hardware', label: 'Hardware' },
   { id: 'Ciberseguridad', label: 'Ciberseguridad' },
@@ -81,6 +82,7 @@ export const CAT_A_NIVEL: Record<string, NivelRubro> = {
   'IA/analytics': 'nucleo',
   'Cloud/hosting': 'nucleo',
   'Desarrollo software': 'nucleo',
+  'Telemetria/OT': 'nucleo',
   'Base de datos/ERP': 'adyacente',
   'Oracle': 'adyacente',
   'Soporte tecnico': 'oportunista',
