@@ -29,13 +29,22 @@ function Veredicto({ o }: { o: Oportunidad }) {
           ⚡ Urgente
         </span>
       )}
-      {o.veredicto === 'recomendado' ? (
+      {o.veredictoGemini === 'no_recomendado' ? (
+        <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+          No recomendado
+        </span>
+      ) : o.veredicto === 'recomendado' ? (
         <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
           Recomendado
         </span>
       ) : (
         <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
           Evaluar
+        </span>
+      )}
+      {o.scoreFuente === 'heuristica' && (
+        <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+          sin análisis
         </span>
       )}
     </div>
