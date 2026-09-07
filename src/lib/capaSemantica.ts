@@ -312,7 +312,7 @@ function parseNegocio(row: Record<string, unknown>): KpisNegocio {
 }
 
 async function countIt(filters: { gtePub?: string; ltPub?: string; estado?: string }): Promise<number> {
-  let q = supabase.from('contratos').select('id', { count: 'exact', head: true }).or(IT_OR)
+  let q = supabase.from('v_contratos').select('id', { count: 'exact', head: true }).or(IT_OR)
   if (filters.estado) q = q.eq('estado', filters.estado)
   if (filters.gtePub) q = q.gte('fecha_publica', filters.gtePub)
   if (filters.ltPub) q = q.lt('fecha_publica', filters.ltPub)
@@ -373,11 +373,11 @@ async function fetchCapaTs(): Promise<CapaSemantica> {
   const d7 = addCalendarDays(today, -6)
   const d14 = addCalendarDays(today, -13)
   const [vig, evalRows, enEval, altas7, altasPrev] = await Promise.all([
-    supabase.from('contratos').select(RUTA_DIA_COLS)
+    supabase.from('v_contratos').select(RUTA_DIA_COLS)
       .eq('estado', 'Vigente').or(IT_OR)
       .order('fecha_fin_cotizacion', { ascending: true, nullsFirst: false })
       .limit(800),
-    supabase.from('contratos').select(RUTA_DIA_COLS)
+    supabase.from('v_contratos').select(RUTA_DIA_COLS)
       .eq('estado', 'En Evaluación').or(IT_OR)
       .order('fecha_fin_cotizacion', { ascending: false, nullsFirst: false })
       .limit(800),

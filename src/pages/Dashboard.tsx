@@ -83,8 +83,8 @@ export default function Dashboard() {
         const [capaRes, rResumen, rRecientes, rUltima, convRes] = await Promise.all([
           cargarCapaSemantica(),
           supabase.from('dashboard_resumen').select('*'),
-          supabase.from('contratos').select('*').order('fecha_publica', { ascending: false }).limit(10),
-          supabase.from('contratos').select('fecha_publica').order('fecha_publica', { ascending: false }).limit(1),
+          supabase.from('v_contratos').select('*').order('fecha_publica', { ascending: false }).limit(10),
+          supabase.from('v_contratos').select('fecha_publica').order('fecha_publica', { ascending: false }).limit(1),
           cargarKpisConversion(),
         ])
         if (cancelled) return

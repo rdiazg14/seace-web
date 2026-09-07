@@ -52,7 +52,7 @@ export default function Buscador() {
         const ids = list.map(r => r.id)
         if (ids.length) {
           const { data: extra } = await supabase
-            .from('contratos')
+            .from('v_contratos')
             .select('id,pdf_archivo_id,pdf_storage_path')
             .in('id', ids)
           const byId = new Map((extra ?? []).map(x => [x.id as number, x]))
@@ -67,7 +67,7 @@ export default function Buscador() {
         setTotal(list.length)
         setRows(list.slice(from, from + 20))
       } else {
-        let query = supabase.from('contratos').select('*', { count: 'exact' })
+        let query = supabase.from('v_contratos').select('*', { count: 'exact' })
         if (objetos.length) query = query.in('objeto', objetos)
         if (estados.length) query = query.in('estado', estados)
         if (cats.length) query = query.in('categoria_it', cats)
@@ -114,7 +114,7 @@ export default function Buscador() {
     }
     const handle = window.setTimeout(async () => {
       const { data } = await supabase
-        .from('contratos')
+        .from('v_contratos')
         .select('entidad')
         .ilike('entidad', `%${sanitize(t)}%`)
         .limit(40)
