@@ -9,12 +9,16 @@ import {
   limaDateISO,
 } from '../lib/format'
 import {
+  ANALISIS_SCORE_SELECT,
   aplicarFiltros,
   LINEA_CHIPS,
   NIVELES,
   puntuar,
   rankingActivo,
+  resolverAnalisisParaContrato,
   RUTA_DIA_COLS,
+  sliceDesdeFilaAnalisis,
+  type AnalisisScoreSlice,
   type FiltroCierre,
   type FiltroEstado,
   type NivelRubro,
@@ -25,6 +29,13 @@ import OportunidadCard from '../components/OportunidadCard'
 
 const EXPANDS = [15, 50, 100, 500, 1000] as const
 const PAGE = 1000
+const ID_CHUNK = 200
+
+type AnalisisFilaScore = {
+  contrato_id: number
+  pdf_hash: string
+  slice: AnalisisScoreSlice | null
+}
 
 async function fetchUniverso(): Promise<Contrato[]> {
   const out: Contrato[] = []
@@ -46,8 +57,43 @@ async function fetchUniverso(): Promise<Contrato[]> {
   return out
 }
 
+/**
+ * Round-trip a analisis_contrato (chunked por límite URL).
+ * Select JSON path: solo encaje/economia/condiciones/veredicto del payload.
+ * Hoy hay ~17 filas; se pide por ids postulables del universo.
+ */
+async function fetchAnalisisScore(ids: number[]): Promise<AnalisisFilaScore[]> {
+  if (ids.length === 0) return []
+  const out: AnalisisFilaScore[] = []
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK)
+    const { data, error } = await supabase
+      .from('analisis_contrato')
+      .select(ANALISIS_SCORE_SELECT)
+      .in('contrato_id', chunk)
+    if (error) throw error
+    for (const row of data ?? []) {
+      const r = row as {
+        contrato_id: number
+        pdf_hash: string
+        encaje?: unknown
+        economia?: unknown
+        condiciones?: unknown
+        veredicto?: unknown
+      }
+      out.push({
+        contrato_id: r.contrato_id,
+        pdf_hash: r.pdf_hash,
+        slice: sliceDesdeFilaAnalisis(r),
+      })
+    }
+  }
+  return out
+}
+
 export default function RutaDia() {
   const [raw, setRaw] = useState<Contrato[]>([])
+  const [analisisFilas, setAnalisisFilas] = useState<AnalisisFilaScore[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
@@ -63,7 +109,12 @@ export default function RutaDia() {
       setError(null)
       try {
         const rows = await fetchUniverso()
-        if (!cancelled) setRaw(rows)
+        // Ids del universo (Vigente + En Evaluación). Respuesta ≤ filas en analisis_contrato (~17).
+        const analisis = await fetchAnalisisScore(rows.map(c => c.id))
+        if (!cancelled) {
+          setRaw(rows)
+          setAnalisisFilas(analisis)
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar la ruta del día')
       } finally {
@@ -78,7 +129,13 @@ export default function RutaDia() {
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
 
-  const scored = useMemo(() => rankingActivo(raw.map(c => puntuar(c))), [raw])
+  const scored = useMemo(
+    () => rankingActivo(raw.map(c => {
+      const slice = resolverAnalisisParaContrato(c, analisisFilas)
+      return puntuar(c, new Date(), slice)
+    })),
+    [raw, analisisFilas],
+  )
 
   const filtrado = useMemo(
     () => aplicarFiltros(scored, { nivel, linea, cierre, estado }),
@@ -133,7 +190,7 @@ export default function RutaDia() {
           <div>
             <h1 className="text-xl text-[var(--text-primary)] sm:text-2xl">Ruta del día</h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Brief de oportunidades ENERTRONIC · score preliminar (sin IA)
+              Brief de oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
           </div>
           <p className="text-xs capitalize text-slate-400">{fmtFechaLarga()}</p>
@@ -276,8 +333,8 @@ export default function RutaDia() {
       </section>
 
       <p className="pb-6 text-[11px] text-slate-400">
-        Score = rubro 50 + vigencia 25 + urgencia 15 + señales 10. Modalidad, pago y margen llegan con el análisis IA.
-        Ciberseguridad permanece oportunista (candidato a revisar si aparecen contratos fuertes).
+        Con análisis: rubro 28 + califica 18 + margen% 18 + modalidad/pago 8+8 + plazo/riesgo 5+5 + vigencia/urgencia 10+10;
+        si no califica técnicamente → techo 35 (sigue en lista). Sin análisis: heurística rubro 50 + vigencia 25 + urgencia 15 + señales 10.
       </p>
     </div>
   )
