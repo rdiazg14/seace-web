@@ -372,7 +372,7 @@ export default function AnalisisContrato() {
       setData(null)
       try {
         const { data: row, error: err } = await supabase
-          .from('contratos')
+          .from('v_contratos')
           .select('id,nro_contratacion,descripcion_contrato,descripcion,entidad,estado,objeto,nom_area_usuaria,fecha_publica,fecha_fin_cotizacion,tipo_cotizacion,categoria_it,relevancia_ia,pdf_archivo_id,pdf_storage_path,pdf_hash')
           .eq('id', contratoId)
           .maybeSingle()

@@ -79,7 +79,7 @@ function CitaFuente({
 async function loadContratos(refs: ContratoRef[]): Promise<Contrato[]> {
   if (!refs.length) return []
   const ids = refs.map(r => r.id)
-  const { data: rows } = await supabase.from('contratos').select('*').in('id', ids)
+  const { data: rows } = await supabase.from('v_contratos').select('*').in('id', ids)
   const byId = new Map(((rows ?? []) as Contrato[]).map(c => [c.id, c]))
   return ids.map(id => byId.get(id)).filter((c): c is Contrato => Boolean(c))
 }

@@ -42,7 +42,7 @@ async function fetchUniverso(): Promise<Contrato[]> {
   let from = 0
   for (;;) {
     const { data, error } = await supabase
-      .from('contratos')
+      .from('v_contratos')
       .select(RUTA_DIA_COLS)
       .in('estado', ['Vigente', 'En Evaluación'])
       .or('categoria_it.not.is.null,relevancia_ia.not.is.null')
