@@ -338,6 +338,113 @@ async function promover(
   return corsJson(req, { keyword: kw, candidata_id: candidataId })
 }
 
+async function colaAprobar(
+  req: Request,
+  service: SupabaseClient,
+  adminId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const pid = Number(body.id)
+  const categoria = str(body, 'categoria').trim()
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return corsJson(req, { error: 'validation', mensaje: 'Falta el id de la cola.' }, 400)
+  }
+  if (!(CATEGORIAS as readonly string[]).includes(categoria)) {
+    return corsJson(req, { error: 'validation', mensaje: 'Categoría no válida.' }, 400)
+  }
+
+  const { data: row, error: rErr } = await service
+    .from('clasificacion_pendiente')
+    .select('id, contrato_id, estado, categoria_p1, categoria_p2, votos')
+    .eq('id', pid)
+    .maybeSingle()
+  if (rErr || !row) {
+    return corsJson(req, { error: 'not_found', mensaje: 'No existe ese pendiente.' }, 404)
+  }
+  if (row.estado !== 'pendiente') {
+    return corsJson(req, { error: 'conflict', mensaje: `Estado actual: ${row.estado}.` }, 409)
+  }
+
+  const { data: prev } = await service
+    .from('clasificacion_contrato')
+    .select('relevancia_ia')
+    .eq('contrato_id', row.contrato_id)
+    .maybeSingle()
+
+  const { error: uErr } = await service.from('clasificacion_contrato').upsert({
+    contrato_id: row.contrato_id,
+    categoria_it: categoria,
+    relevancia_ia: prev?.relevancia_ia ?? null,
+    capa: 'humano',
+    consenso_n: 0,
+    revisar: false,
+    artefacto: 'c3_admin',
+  }, { onConflict: 'contrato_id' })
+  if (uErr) {
+    return corsJson(req, { error: 'write', mensaje: uErr.message }, 400)
+  }
+
+  const { error: pErr } = await service.from('clasificacion_pendiente').update({
+    estado: 'aprobada',
+    resuelto_utc: new Date().toISOString(),
+    resuelto_por: adminId,
+  }).eq('id', pid)
+  if (pErr) {
+    return corsJson(req, { error: 'cola', mensaje: pErr.message }, 500)
+  }
+
+  return corsJson(req, {
+    ok: true,
+    id: pid,
+    contrato_id: row.contrato_id,
+    categoria,
+    capa: 'humano',
+  })
+}
+
+async function colaRechazar(
+  req: Request,
+  service: SupabaseClient,
+  adminId: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const pid = Number(body.id)
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return corsJson(req, { error: 'validation', mensaje: 'Falta el id de la cola.' }, 400)
+  }
+
+  const { data: row, error: rErr } = await service
+    .from('clasificacion_pendiente')
+    .select('id, contrato_id, estado')
+    .eq('id', pid)
+    .maybeSingle()
+  if (rErr || !row) {
+    return corsJson(req, { error: 'not_found', mensaje: 'No existe ese pendiente.' }, 404)
+  }
+  if (row.estado !== 'pendiente') {
+    return corsJson(req, { error: 'conflict', mensaje: `Estado actual: ${row.estado}.` }, 409)
+  }
+
+  const { error: dErr } = await service
+    .from('clasificacion_contrato')
+    .delete()
+    .eq('contrato_id', row.contrato_id)
+  if (dErr) {
+    return corsJson(req, { error: 'write', mensaje: dErr.message }, 400)
+  }
+
+  const { error: pErr } = await service.from('clasificacion_pendiente').update({
+    estado: 'rechazada',
+    resuelto_utc: new Date().toISOString(),
+    resuelto_por: adminId,
+  }).eq('id', pid)
+  if (pErr) {
+    return corsJson(req, { error: 'cola', mensaje: pErr.message }, 500)
+  }
+
+  return corsJson(req, { ok: true, id: pid, contrato_id: row.contrato_id, estado: 'rechazada' })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return corsOptions(req)
 
@@ -369,6 +476,16 @@ Deno.serve(async (req) => {
     }
     if (req.method === 'POST' && (sub === 'promover' || accion === 'promover')) {
       return await promover(req, service, admin.id, body)
+    }
+    if (req.method === 'POST' && (sub === 'cola' || rest[0] === 'cola')) {
+      const colaAccion = rest[1] || str(body, 'cola_accion').trim() || accion
+      if (colaAccion === 'aprobar') {
+        return await colaAprobar(req, service, admin.id, body)
+      }
+      if (colaAccion === 'rechazar') {
+        return await colaRechazar(req, service, admin.id, body)
+      }
+      return corsJson(req, { error: 'method', mensaje: 'Usá /cola/aprobar o /cola/rechazar.' }, 405)
     }
     if (req.method === 'PATCH') {
       const pid = id ?? Number(body.id)
