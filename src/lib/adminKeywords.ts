@@ -65,3 +65,21 @@ export function simularKeyword(token: string, body: {
 export function promoverCandidata(token: string, candidata_id: number) {
   return callAdminKw('/promover', 'POST', token, { candidata_id })
 }
+
+export function colaAprobar(token: string, id: number, categoria: string) {
+  return callAdminKw<{ ok: boolean; contrato_id: number; categoria: string; capa: string }>(
+    '/cola/aprobar',
+    'POST',
+    token,
+    { id, categoria },
+  )
+}
+
+export function colaRechazar(token: string, id: number) {
+  return callAdminKw<{ ok: boolean; contrato_id: number; estado: string }>(
+    '/cola/rechazar',
+    'POST',
+    token,
+    { id },
+  )
+}

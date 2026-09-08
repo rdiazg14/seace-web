@@ -4,6 +4,8 @@ import { useAuth } from '../lib/auth'
 import { KEYWORD_CATS } from '../lib/cats'
 import { Chip, EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import {
+  colaAprobar,
+  colaRechazar,
   crearKeyword,
   patchKeyword,
   promoverCandidata,
@@ -31,6 +33,35 @@ interface CandidataRow {
   veces_vista: number
   estado: string
   evidencia: Record<string, unknown> | null
+}
+
+interface ColaRow {
+  id: number
+  contrato_id: number
+  categoria_p1: string | null
+  categoria_p2: string | null
+  origen: string | null
+  votos: Record<string, string> | null
+  estado: string
+  nota: string | null
+  titulo: string | null
+}
+
+function catsSugeridas(r: ColaRow): string[] {
+  const out: string[] = []
+  for (const c of [r.categoria_p1, r.categoria_p2]) {
+    if (c && c !== 'ninguna' && KEYWORD_CATS.includes(c as (typeof KEYWORD_CATS)[number])) {
+      out.push(c)
+    }
+  }
+  if (r.votos) {
+    for (const v of Object.values(r.votos)) {
+      if (v && v !== 'ninguna' && KEYWORD_CATS.includes(v as (typeof KEYWORD_CATS)[number])) {
+        out.push(v)
+      }
+    }
+  }
+  return [...new Set(out)]
 }
 
 type SortKey = 'etiquetas' | 'prioridad' | 'keyword' | 'categoria'
@@ -96,6 +127,8 @@ export default function Keywords() {
 
   const [rows, setRows] = useState<KeywordRow[]>([])
   const [cands, setCands] = useState<CandidataRow[]>([])
+  const [cola, setCola] = useState<ColaRow[]>([])
+  const [catElegida, setCatElegida] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
@@ -122,7 +155,7 @@ export default function Keywords() {
   async function load() {
     setLoading(true)
     setError(null)
-    const [kwRes, cntRes, candRes] = await Promise.all([
+    const [kwRes, cntRes, candRes, colaRes] = await Promise.all([
       supabase
         .from('it_keywords')
         .select('id, categoria, keyword, tipo, prioridad, limite_palabra, tolera_plural, activa, nota')
@@ -135,6 +168,13 @@ export default function Keywords() {
         .select('id, senal, categoria_propuesta, veces_vista, estado, evidencia')
         .order('veces_vista', { ascending: false })
         .limit(2000),
+      supabase
+        .from('clasificacion_pendiente')
+        .select('id, contrato_id, categoria_p1, categoria_p2, origen, votos, estado, nota, titulo')
+        .in('estado', ['pendiente', 'observacion'])
+        .order('estado')
+        .order('contrato_id', { ascending: false })
+        .limit(500),
     ])
     if (kwRes.error) {
       setError(kwRes.error.message)
@@ -151,6 +191,11 @@ export default function Keywords() {
       setLoading(false)
       return
     }
+    if (colaRes.error) {
+      setError(colaRes.error.message)
+      setLoading(false)
+      return
+    }
     const counts = new Map<number, number>()
     for (const r of (cntRes.data ?? []) as { keyword_id: number; n: number }[]) {
       counts.set(Number(r.keyword_id), Number(r.n))
@@ -160,6 +205,7 @@ export default function Keywords() {
       etiquetas: counts.get(r.id) ?? 0,
     })) as KeywordRow[])
     setCands((candRes.data ?? []) as CandidataRow[])
+    setCola((colaRes.data ?? []) as ColaRow[])
     setLoading(false)
   }
 
@@ -295,6 +341,44 @@ export default function Keywords() {
     await load()
   }
 
+  async function onAprobarCola(r: ColaRow) {
+    if (!token) return
+    const sugeridas = catsSugeridas(r)
+    const cat = catElegida[r.id] || sugeridas[0] || ''
+    if (!cat) {
+      setError('Elegí una categoría para aprobar.')
+      return
+    }
+    setBusyId(r.id)
+    setError(null)
+    const res = await colaAprobar(token, r.id, cat)
+    setBusyId(null)
+    if (!res.ok) {
+      setError(res.err.mensaje || `HTTP ${res.status}`)
+      return
+    }
+    setOk(`Aprobado ${r.contrato_id} → ${cat} (capa humano).`)
+    await load()
+  }
+
+  async function onRechazarCola(r: ColaRow) {
+    if (!token) return
+    const okc = confirm(
+      `¿Rechazar ${r.contrato_id}? Queda sin clasificar y no se vuelve a proponer esa categoría.`,
+    )
+    if (!okc) return
+    setBusyId(r.id)
+    setError(null)
+    const res = await colaRechazar(token, r.id)
+    setBusyId(null)
+    if (!res.ok) {
+      setError(res.err.mensaje || `HTTP ${res.status}`)
+      return
+    }
+    setOk(`Rechazado ${r.contrato_id}. Ledger C3 para no re-proponer.`)
+    await load()
+  }
+
   const th = (k: SortKey, label: string) => (
     <th className="px-3 py-2 font-medium">
       <button type="button" onClick={() => clickSort(k)} className="hover:underline">
@@ -320,6 +404,103 @@ export default function Keywords() {
           {ok}
         </p>
       )}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Cola de revisión</h2>
+        <p className="text-xs text-slate-500">
+          Discrepancias de Gemini. Aprobar escribe capa=humano. Rechazar deja el
+          contrato sin clasificar y entra al ledger. Escritura vía admin-keywords.
+        </p>
+        {loading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : cola.length === 0 ? (
+          <EmptyState title="Cola vacía" hint="Gemini semanal carga pendientes acá." />
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full min-w-[52rem] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Id</th>
+                  <th className="px-3 py-2 font-medium">Título</th>
+                  <th className="px-3 py-2 font-medium">Origen</th>
+                  <th className="px-3 py-2 font-medium">P1 / P2</th>
+                  <th className="px-3 py-2 font-medium">Votos</th>
+                  <th className="px-3 py-2 font-medium">Estado</th>
+                  <th className="px-3 py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {cola.map((r) => {
+                  const sugeridas = catsSugeridas(r)
+                  const elegida = catElegida[r.id] || sugeridas[0] || KEYWORD_CATS[0]
+                  const votosTxt = r.votos
+                    ? Object.entries(r.votos).map(([, v]) => v).join(' · ')
+                    : '—'
+                  return (
+                    <tr key={r.id} className="border-t border-slate-200 dark:border-slate-800">
+                      <td className="px-3 py-2 font-mono text-xs">{r.contrato_id}</td>
+                      <td className="max-w-[18rem] truncate px-3 py-2 text-xs" title={r.titulo ?? ''}>
+                        {r.titulo || '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs">{r.origen || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {r.categoria_p1 || '—'}
+                        {' / '}
+                        {r.categoria_p2 || '—'}
+                      </td>
+                      <td className="max-w-[12rem] truncate px-3 py-2 text-xs" title={votosTxt}>{votosTxt}</td>
+                      <td className="px-3 py-2 text-xs">{r.estado}</td>
+                      <td className="px-3 py-2">
+                        {r.estado === 'observacion' ? (
+                          <span className="text-xs text-slate-500" title={r.nota ?? ''}>
+                            {r.nota || 'límite conocido'}
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              value={elegida}
+                              onChange={(e) => setCatElegida((m) => ({ ...m, [r.id]: e.target.value }))}
+                              className="rounded border border-slate-300 bg-white px-1 py-1 text-xs dark:border-slate-700 dark:bg-slate-950"
+                            >
+                              {(sugeridas.length ? sugeridas : [...KEYWORD_CATS]).map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                              {sugeridas.length > 0 && KEYWORD_CATS.filter((c) => !sugeridas.includes(c)).map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={busyId === r.id}
+                              onClick={() => void onAprobarCola(r)}
+                              className="text-xs font-medium text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-400"
+                            >
+                              {busyId === r.id ? '…' : 'Aprobar'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === r.id}
+                              onClick={() => void onRechazarCola(r)}
+                              className="text-xs font-medium text-slate-600 hover:underline disabled:opacity-50 dark:text-slate-300"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          {cola.filter((r) => r.estado === 'pendiente').length} pendientes
+          {' · '}
+          {cola.filter((r) => r.estado === 'observacion').length} observaciones
+        </p>
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Agregar keyword</h2>
