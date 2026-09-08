@@ -1,3 +1,21 @@
+/** 14 categorías de it_keywords, orden de cascada (prioridad 1..14). */
+export const KEYWORD_CATS = [
+  'Firma digital',
+  'IA/analytics',
+  'Ciberseguridad',
+  'Cloud/hosting',
+  'Microsoft',
+  'Oracle',
+  'Base de datos/ERP',
+  'Licencias',
+  'Desarrollo software',
+  'Soporte tecnico',
+  'Redes/cableado',
+  'Correo electronico',
+  'Telemetria/OT',
+  'Hardware',
+] as const
+
 export const IT_CHIPS = [
   { id: 'Hardware', label: 'Hardware' },
   { id: 'Desarrollo software', label: 'Desarrollo' },
