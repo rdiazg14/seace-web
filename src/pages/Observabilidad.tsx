@@ -22,6 +22,7 @@ interface LastError {
   status: number | null
   body: string
   timestamp: string | null
+  source?: string | null
 }
 
 interface AdminStats {
@@ -33,8 +34,11 @@ interface AdminStats {
     cotizar_tipo: Record<TipoRespuesta, number>
     chat_cache: { hit: number; miss: number }
     pipeline_trigger_last_error: LastError | null
+    pipeline_trigger_last_ok: LastError | null
   }
 }
+
+const TRIGGER_STALE_MS = 36 * 60 * 60 * 1000
 
 function since14dIso(): string {
   return new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
@@ -232,6 +236,11 @@ export default function Observabilidad() {
   }, [session?.access_token])
 
   const lastErr = stats?.kv.pipeline_trigger_last_error ?? null
+  const lastOk = stats?.kv.pipeline_trigger_last_ok ?? null
+  const lastOkMs = lastOk?.timestamp ? Date.parse(lastOk.timestamp) : NaN
+  const lastOkAgeMs = Number.isFinite(lastOkMs) ? Date.now() - lastOkMs : null
+  const triggerStale = lastOkAgeMs != null && lastOkAgeMs > TRIGGER_STALE_MS
+  const triggerSinOk = Boolean(stats) && !lastOk
 
   const kvRows = useMemo(() => {
     if (!stats) return []
@@ -275,17 +284,64 @@ export default function Observabilidad() {
         </p>
       </div>
 
-      {lastErr && (
-        <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          <p className="font-medium">Último error del pipeline-trigger</p>
-          <p className="mt-1">
-            HTTP {lastErr.status ?? '—'} · {fmtTs(lastErr.timestamp)}
-          </p>
-          {lastErr.body && (
-            <p className="mt-2 whitespace-pre-wrap break-all font-mono text-xs">{lastErr.body}</p>
-          )}
-        </div>
-      )}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Pipeline trigger</h2>
+        {statsErr && <ErrorBox retry={() => void loadStats()}>{statsErr}</ErrorBox>}
+        {statsLoading ? (
+          <Skeleton className="h-28 w-full" />
+        ) : stats ? (
+          <div className="space-y-3">
+            {triggerStale && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                <p className="font-medium">
+                  El trigger no dispara desde {fmtTs(lastOk?.timestamp ?? null)}
+                </p>
+                <p className="mt-1">
+                  Más de 36 h sin un dispatch OK. Si el PAT venció (401), renovar
+                  en GitHub y <span className="font-mono text-xs">wrangler secret put GITHUB_PAT</span>.
+                </p>
+              </div>
+            )}
+            {triggerSinOk && !triggerStale && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+                <p className="font-medium">Sin last-ok todavía</p>
+                <p className="mt-1">
+                  El Worker escribe esta marca en el próximo cron (09:00 Lima) o
+                  en un POST de prueba. No es una falla por sí sola.
+                </p>
+              </div>
+            )}
+            {!triggerStale && lastOk && (
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Último dispatch OK</p>
+                <p className="mt-1">
+                  {fmtTs(lastOk.timestamp)}
+                  {lastOk.source ? ` · ${lastOk.source}` : ''}
+                  {lastOk.status != null ? ` · HTTP ${lastOk.status}` : ''}
+                </p>
+              </div>
+            )}
+            {lastErr && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                <p className="font-medium">Último error del pipeline-trigger</p>
+                <p className="mt-1">
+                  HTTP {lastErr.status ?? '—'} · {fmtTs(lastErr.timestamp)}
+                  {lastErr.source ? ` · ${lastErr.source}` : ''}
+                </p>
+                {lastErr.status === 401 && (
+                  <p className="mt-1">
+                    401 = PAT expirado o revocado. Regenerar token_seace_monitor
+                    y cargar GITHUB_PAT en Cloudflare.
+                  </p>
+                )}
+                {lastErr.body && (
+                  <p className="mt-2 whitespace-pre-wrap break-all font-mono text-xs">{lastErr.body}</p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Catálogo CUBSO</h2>
