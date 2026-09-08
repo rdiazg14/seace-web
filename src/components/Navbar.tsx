@@ -51,6 +51,9 @@ export default function Navbar() {
               <NavLink to="/observabilidad" className={linkCls}>
                 Observabilidad
               </NavLink>
+              <NavLink to="/keywords" className={linkCls}>
+                Keywords
+              </NavLink>
               <NavLink to="/usuarios" className={linkCls}>
                 Usuarios
               </NavLink>
@@ -108,6 +111,9 @@ export default function Navbar() {
             <>
               <NavLink to="/observabilidad" className={linkCls} onClick={() => setOpen(false)}>
                 Observabilidad
+              </NavLink>
+              <NavLink to="/keywords" className={linkCls} onClick={() => setOpen(false)}>
+                Keywords
               </NavLink>
               <NavLink to="/usuarios" className={linkCls} onClick={() => setOpen(false)}>
                 Usuarios
