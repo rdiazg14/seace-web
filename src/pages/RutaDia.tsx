@@ -46,6 +46,9 @@ async function fetchUniverso(): Promise<Contrato[]> {
       .select(RUTA_DIA_COLS)
       .in('estado', ['Vigente', 'En Evaluación'])
       .or('categoria_it.not.is.null,relevancia_ia.not.is.null')
+      // PostgREST: .range() sin .order() no garantiza orden entre paginas;
+      // la pagina 2 puede repetir filas de la 1 y omitir otras.
+      .order('id')
       .range(from, from + PAGE - 1)
     if (error) throw error
     const batch = (data ?? []) as unknown as Contrato[]
