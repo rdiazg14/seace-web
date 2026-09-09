@@ -25,6 +25,12 @@ interface LastError {
   source?: string | null
 }
 
+interface TokenExpira {
+  expira: string
+  leido_utc: string
+  source?: string | null
+}
+
 interface AdminStats {
   day: string
   kv: {
@@ -35,6 +41,7 @@ interface AdminStats {
     chat_cache: { hit: number; miss: number }
     pipeline_trigger_last_error: LastError | null
     pipeline_trigger_last_ok: LastError | null
+    pipeline_trigger_token_expira: TokenExpira | null
   }
 }
 
@@ -64,6 +71,15 @@ function diasDesde(isoDate: string): number {
   const utcHoy = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
   const utcVer = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
   return Math.floor((utcHoy - utcVer) / 86_400_000)
+}
+
+function diasHasta(isoDate: string): number {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return 0
+  const hoy = new Date()
+  const utcHoy = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const utcVer = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  return Math.round((utcVer - utcHoy) / 86_400_000)
 }
 
 function CubsoCard({
@@ -237,10 +253,19 @@ export default function Observabilidad() {
 
   const lastErr = stats?.kv.pipeline_trigger_last_error ?? null
   const lastOk = stats?.kv.pipeline_trigger_last_ok ?? null
+  const tokenExpira = stats?.kv.pipeline_trigger_token_expira ?? null
+  const diasToken = tokenExpira ? diasHasta(tokenExpira.expira) : null
   const lastOkMs = lastOk?.timestamp ? Date.parse(lastOk.timestamp) : NaN
   const lastOkAgeMs = Number.isFinite(lastOkMs) ? Date.now() - lastOkMs : null
   const triggerStale = lastOkAgeMs != null && lastOkAgeMs > TRIGGER_STALE_MS
   const triggerSinOk = Boolean(stats) && !lastOk
+
+  let tokenCls = 'rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800'
+  if (diasToken !== null && diasToken < 7) {
+    tokenCls = 'rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300'
+  } else if (diasToken !== null && diasToken < 14) {
+    tokenCls = 'rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300'
+  }
 
   const kvRows = useMemo(() => {
     if (!stats) return []
@@ -337,6 +362,29 @@ export default function Observabilidad() {
                 {lastErr.body && (
                   <p className="mt-2 whitespace-pre-wrap break-all font-mono text-xs">{lastErr.body}</p>
                 )}
+              </div>
+            )}
+            {tokenExpira ? (
+              <div className={tokenCls}>
+                <p className="font-medium">Token GitHub (GITHUB_PAT)</p>
+                <p className="mt-1">
+                  Vence el {fmtDate(tokenExpira.expira)} ·{' '}
+                  {diasToken !== null && diasToken < 0
+                    ? 'vencido'
+                    : `en ${diasToken} días`}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  github-authentication-token-expiration · leído {fmtTs(tokenExpira.leido_utc)}
+                  {tokenExpira.source ? ` · ${tokenExpira.source}` : ''}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Token GitHub (GITHUB_PAT)</p>
+                <p className="mt-1">
+                  Sin dato de expiración todavía: lo escribe el trigger en el
+                  próximo dispatch (cron 09:00 Lima o POST de prueba).
+                </p>
               </div>
             )}
           </div>
