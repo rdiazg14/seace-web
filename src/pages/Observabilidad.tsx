@@ -31,6 +31,24 @@ interface TokenExpira {
   source?: string | null
 }
 
+/**
+ * Postulable con ventana abierta, sin pdf_storage_path y sin req_url:
+ * nunca se intento la descarga. No deja rastro en ingesta_rechazados
+ * (esa tabla solo registra fallos, no omisiones), asi que esta tarjeta
+ * es la unica superficie visible de esa categoria.
+ */
+interface SinIntento {
+  id: number
+  nro_contratacion: string | null
+  descripcion_contrato: string | null
+  objeto: string | null
+  descripcion: string | null
+  entidad: string | null
+  fecha_fin_cotizacion: string | null
+}
+
+const SIN_INTENTO_PAGE = 1000
+
 interface AdminStats {
   day: string
   kv: {
@@ -80,6 +98,29 @@ function diasHasta(isoDate: string): number {
   const utcHoy = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
   const utcVer = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
   return Math.round((utcVer - utcHoy) / 86_400_000)
+}
+
+/** Contratos que el sistema ve pero nunca intento descargar (no hay req_url). */
+async function cargarSinIntento(): Promise<SinIntento[]> {
+  const out: SinIntento[] = []
+  for (let from = 0; ; from += SIN_INTENTO_PAGE) {
+    const { data, error } = await supabase
+      .from('v_contratos')
+      .select('id,nro_contratacion,descripcion_contrato,objeto,descripcion,entidad,fecha_fin_cotizacion')
+      .is('pdf_storage_path', null)
+      .is('req_url', null)
+      .order('id')
+      .range(from, from + SIN_INTENTO_PAGE - 1)
+    if (error) throw error
+    const batch = (data ?? []) as SinIntento[]
+    out.push(...batch)
+    if (batch.length < SIN_INTENTO_PAGE) break
+  }
+  const ahora = Date.now()
+  return out.filter((c) => {
+    const ini = c.fecha_fin_cotizacion ? Date.parse(c.fecha_fin_cotizacion) : NaN
+    return !Number.isFinite(ini) || ini >= ahora
+  })
 }
 
 function CubsoCard({
@@ -147,6 +188,10 @@ export default function Observabilidad() {
   } | null>(null)
   const [cubsoErr, setCubsoErr] = useState<string | null>(null)
   const [cubsoLoading, setCubsoLoading] = useState(true)
+
+  const [sinIntento, setSinIntento] = useState<SinIntento[] | null>(null)
+  const [sinIntentoErr, setSinIntentoErr] = useState<string | null>(null)
+  const [sinIntentoLoading, setSinIntentoLoading] = useState(true)
 
   async function loadStats() {
     setStatsLoading(true)
@@ -243,10 +288,24 @@ export default function Observabilidad() {
     setCubsoLoading(false)
   }
 
+  async function loadSinIntento() {
+    setSinIntentoLoading(true)
+    setSinIntentoErr(null)
+    try {
+      setSinIntento(await cargarSinIntento())
+    } catch (e) {
+      setSinIntentoErr(e instanceof Error ? e.message : 'No se pudo leer v_contratos')
+      setSinIntento(null)
+    } finally {
+      setSinIntentoLoading(false)
+    }
+  }
+
   useEffect(() => {
     void loadStats()
     void loadTipos()
     void loadCubso()
+    void loadSinIntento()
     // session.access_token basta; no re-fetch en cada render del objeto session
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token])
@@ -389,6 +448,69 @@ export default function Observabilidad() {
             )}
           </div>
         ) : null}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Postulables sin intento de descarga</h2>
+        <p className="text-sm text-slate-500">
+          Ventana abierta, sin <span className="font-mono text-xs">pdf_storage_path</span> y
+          sin <span className="font-mono text-xs">req_url</span>: el sistema los ve pero
+          nunca intento bajar el TDR, asi que no pueden analizarse. No dejan rastro en
+          ingesta_rechazados (esa tabla solo registra fallos, no omisiones);
+          verificar_capas.py sale con codigo 1 si esta lista no esta vacia.
+        </p>
+        {sinIntentoErr && (
+          <ErrorBox retry={() => void loadSinIntento()}>{sinIntentoErr}</ErrorBox>
+        )}
+        {sinIntentoLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : !sinIntento ? (
+          sinIntentoErr ? null : (
+            <EmptyState title="Sin dato" hint="No se pudo leer v_contratos." />
+          )
+        ) : sinIntento.length === 0 ? (
+          <EmptyState
+            title="Ninguno pendiente"
+            hint="Todos los postulables con ventana abierta ya tienen intento de descarga."
+          />
+        ) : (
+          <>
+            <p className="text-xs text-slate-500">
+              {sinIntento.length.toLocaleString('es-PE')} contrato
+              {sinIntento.length === 1 ? '' : 's'}
+            </p>
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+              <table className="w-full min-w-[32rem] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">id</th>
+                    <th className="px-3 py-2 font-medium">Título</th>
+                    <th className="px-3 py-2 font-medium">Cierra (hora Lima)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sinIntento.map((c) => (
+                    <tr key={c.id} className="border-t border-slate-200 dark:border-slate-800">
+                      <td className="px-3 py-2 font-mono text-xs">{c.id}</td>
+                      <td className="px-3 py-2">
+                        <Link
+                          to={`/analisis/${c.id}`}
+                          className="font-medium text-teal-600 hover:underline dark:text-teal-400"
+                        >
+                          {(c.descripcion || c.descripcion_contrato || '').replace(/\s+/g, ' ').trim() || `Contrato ${c.id}`}
+                        </Link>
+                        {c.entidad && (
+                          <span className="mt-0.5 block text-xs text-slate-500">{c.entidad}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums">{fmtTs(c.fecha_fin_cotizacion)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="space-y-3">
