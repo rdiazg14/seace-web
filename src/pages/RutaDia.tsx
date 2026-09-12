@@ -5,7 +5,7 @@ import {
   addCalendarDays,
   cierraHoyInstante,
   dayOf,
-  fmtFechaLarga,
+  estadoActualizacion,
   limaDateISO,
 } from '../lib/format'
 import {
@@ -104,6 +104,24 @@ export default function RutaDia() {
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
   const [estado, setEstado] = useState<FiltroEstado>('postulable')
   const [mostrar, setMostrar] = useState(15)
+  const [actualizado, setActualizado] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function cargarActualizacion() {
+      const { data, error } = await supabase
+        .from('pipeline_estado')
+        .select('ultima_corrida_utc')
+        .limit(1)
+        .maybeSingle()
+      if (!cancelled && !error) {
+        const fila = data as { ultima_corrida_utc: string } | null
+        setActualizado(fila?.ultima_corrida_utc ?? null)
+      }
+    }
+    void cargarActualizacion()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -186,6 +204,14 @@ export default function RutaDia() {
   const visible: Oportunidad[] = filtrado.slice(0, mostrar)
   const hayMas = filtrado.length > mostrar
 
+  const headerAct = estadoActualizacion(actualizado)
+  const headerActCls =
+    headerAct.tone === 'stale'
+      ? 'text-xs text-red-600 dark:text-red-400'
+      : headerAct.tone === 'warn'
+        ? 'text-xs text-amber-600 dark:text-amber-400'
+        : 'text-xs text-slate-400'
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <header>
@@ -196,7 +222,7 @@ export default function RutaDia() {
               Brief de oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
           </div>
-          <p className="text-xs capitalize text-slate-400">{fmtFechaLarga()}</p>
+          <p className={headerActCls}>{headerAct.texto}</p>
         </div>
       </header>
 

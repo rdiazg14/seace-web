@@ -89,6 +89,31 @@ export function fmtFechaLarga(d = new Date()): string {
   })
 }
 
+export type ActualizacionTone = 'ok' | 'warn' | 'stale'
+
+/**
+ * Texto del encabezado "Actualizado: …" a partir del timestamp de la última
+ * corrida del pipeline. Aviso si >6 h, rojo "Datos desactualizados" si >24 h.
+ */
+export function estadoActualizacion(
+  iso: string | null,
+  ahora = new Date(),
+): { texto: string; tone: ActualizacionTone } {
+  if (!iso) return { texto: 'Actualizado: sin dato', tone: 'stale' }
+  const d = new Date(iso)
+  const fecha = d.toLocaleDateString('es-PE', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: TZ,
+  })
+  const base = `Actualizado: ${fecha}, ${fmtHora(d)} (${haceCuanto(iso)})`
+  const h = (ahora.getTime() - d.getTime()) / 3_600_000
+  if (h > 24) return { texto: `${base} · Datos desactualizados`, tone: 'stale' }
+  if (h > 6) return { texto: base, tone: 'warn' }
+  return { texto: base, tone: 'ok' }
+}
+
 export function haceCuanto(iso: string | null): string {
   if (!iso) return ''
   const diff = Date.now() - new Date(iso).getTime()
