@@ -141,13 +141,16 @@ export function cierraEn(
   const ms = fin.getTime() - ahora.getTime()
   if (ms < 0) return { label: 'Cerrado', tone: 'vencido', days: -1 }
 
-  if (ms < 24 * 3600 * 1000) {
+  // Criterio: DÍA CALENDARIO EN LIMA, no horas transcurridas. "hoy" = el día
+  // Lima de fin == hoy; "mañana" = día siguiente. Dentro de "hoy", el detalle
+  // de horas/minutos (< 24 h reales) es útil y no depende del calendario.
+  if (daysCal === 0) {
     const mins = Math.max(1, Math.round(ms / 60_000))
     const label = mins < 60 ? `Cierra en ${mins}min` : `Cierra en ${Math.max(1, Math.round(mins / 60))}h`
-    return { label, tone: 'hoy', days: daysCal ?? 0 }
+    return { label, tone: 'hoy', days: 0 }
   }
-  if (ms < 48 * 3600 * 1000) {
-    return { label: `Cierra mañana ${fmtHora(fin)}`, tone: 'manana', days: daysCal ?? 1 }
+  if (daysCal === 1) {
+    return { label: `Cierra mañana ${fmtHora(fin)}`, tone: 'manana', days: 1 }
   }
 
   const diaMes = fin.toLocaleDateString('es-PE', {
