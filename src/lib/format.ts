@@ -91,15 +91,12 @@ export function fmtFechaLarga(d = new Date()): string {
 
 export type ActualizacionTone = 'ok' | 'warn' | 'stale'
 
-/**
- * Texto del encabezado "Actualizado: …" a partir del timestamp de la última
- * corrida del pipeline. Aviso si >6 h, rojo "Datos desactualizados" si >24 h.
- */
-export function estadoActualizacion(
+function _estadoRelativo(
+  prefijo: string,
   iso: string | null,
-  ahora = new Date(),
+  ahora: Date,
 ): { texto: string; tone: ActualizacionTone } {
-  if (!iso) return { texto: 'Actualizado: sin dato', tone: 'stale' }
+  if (!iso) return { texto: `${prefijo} sin dato`, tone: 'stale' }
   const d = new Date(iso)
   const fecha = d.toLocaleDateString('es-PE', {
     day: 'numeric',
@@ -107,11 +104,35 @@ export function estadoActualizacion(
     year: 'numeric',
     timeZone: TZ,
   })
-  const base = `Actualizado: ${fecha}, ${fmtHora(d)} (${haceCuanto(iso)})`
+  const base = `${prefijo} ${fecha}, ${fmtHora(d)} (${haceCuanto(iso)})`
   const h = (ahora.getTime() - d.getTime()) / 3_600_000
   if (h > 24) return { texto: `${base} · Datos desactualizados`, tone: 'stale' }
   if (h > 6) return { texto: base, tone: 'warn' }
   return { texto: base, tone: 'ok' }
+}
+
+/**
+ * Texto del encabezado "Corrida: …" a partir del timestamp de la última corrida
+ * diaria completa (pipeline_estado.ultima_corrida_utc). Aviso si >6 h, rojo
+ * "Datos desactualizados" si >24 h.
+ */
+export function estadoActualizacion(
+  iso: string | null,
+  ahora = new Date(),
+): { texto: string; tone: ActualizacionTone } {
+  return _estadoRelativo('Corrida:', iso, ahora)
+}
+
+/**
+ * Texto "Ingesta: …" a partir de la última consulta a la LISTA de SEACE
+ * (pipeline_estado.ultima_ingesta_utc). Se actualiza cada 2 h (detección
+ * temprana) y también en el diario, así que suele estar mucho más fresca.
+ */
+export function estadoIngesta(
+  iso: string | null,
+  ahora = new Date(),
+): { texto: string; tone: ActualizacionTone } {
+  return _estadoRelativo('Ingesta:', iso, ahora)
 }
 
 export function haceCuanto(iso: string | null): string {

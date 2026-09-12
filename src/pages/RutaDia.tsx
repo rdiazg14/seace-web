@@ -6,6 +6,7 @@ import {
   cierraHoyInstante,
   dayOf,
   estadoActualizacion,
+  estadoIngesta,
   limaDateISO,
 } from '../lib/format'
 import {
@@ -105,18 +106,20 @@ export default function RutaDia() {
   const [estado, setEstado] = useState<FiltroEstado>('postulable')
   const [mostrar, setMostrar] = useState(15)
   const [actualizado, setActualizado] = useState<string | null>(null)
+  const [ingesta, setIngesta] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     async function cargarActualizacion() {
       const { data, error } = await supabase
         .from('pipeline_estado')
-        .select('ultima_corrida_utc')
+        .select('ultima_corrida_utc, ultima_ingesta_utc')
         .limit(1)
         .maybeSingle()
       if (!cancelled && !error) {
-        const fila = data as { ultima_corrida_utc: string } | null
+        const fila = data as { ultima_corrida_utc: string; ultima_ingesta_utc: string | null } | null
         setActualizado(fila?.ultima_corrida_utc ?? null)
+        setIngesta(fila?.ultima_ingesta_utc ?? null)
       }
     }
     void cargarActualizacion()
@@ -205,10 +208,11 @@ export default function RutaDia() {
   const hayMas = filtrado.length > mostrar
 
   const headerAct = estadoActualizacion(actualizado)
-  const headerActCls =
-    headerAct.tone === 'stale'
+  const headerIng = estadoIngesta(ingesta)
+  const toneCls = (tone: string) =>
+    tone === 'stale'
       ? 'text-xs text-red-600 dark:text-red-400'
-      : headerAct.tone === 'warn'
+      : tone === 'warn'
         ? 'text-xs text-amber-600 dark:text-amber-400'
         : 'text-xs text-slate-400'
 
@@ -222,7 +226,10 @@ export default function RutaDia() {
               Brief de oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
           </div>
-          <p className={headerActCls}>{headerAct.texto}</p>
+          <div className="space-y-0.5 text-right">
+            <p className={toneCls(headerIng.tone)}>{headerIng.texto}</p>
+            <p className={toneCls(headerAct.tone)}>{headerAct.texto}</p>
+          </div>
         </div>
       </header>
 
