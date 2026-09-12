@@ -112,27 +112,29 @@ function _estadoRelativo(
 }
 
 /**
- * Texto del encabezado "Corrida: …" a partir del timestamp de la última corrida
- * diaria completa (pipeline_estado.ultima_corrida_utc). Aviso si >6 h, rojo
- * "Datos desactualizados" si >24 h.
+ * Texto del encabezado "Análisis: …" a partir del timestamp de la última corrida
+ * diaria completa (pipeline_estado.ultima_corrida_utc): el procesamiento que
+ * genera score, detalle y análisis. Aviso si >6 h, rojo "Datos desactualizados"
+ * si >24 h.
  */
 export function estadoActualizacion(
   iso: string | null,
   ahora = new Date(),
 ): { texto: string; tone: ActualizacionTone } {
-  return _estadoRelativo('Corrida:', iso, ahora)
+  return _estadoRelativo('Análisis:', iso, ahora)
 }
 
 /**
- * Texto "Ingesta: …" a partir de la última consulta a la LISTA de SEACE
- * (pipeline_estado.ultima_ingesta_utc). Se actualiza cada 2 h (detección
- * temprana) y también en el diario, así que suele estar mucho más fresca.
+ * Texto "Oportunidades: …" a partir de la última revisión de la lista de SEACE
+ * (pipeline_estado.ultima_ingesta_utc): cuándo se buscaron contratos nuevos.
+ * Se actualiza cada 2 h y también en la corrida diaria, así que suele estar
+ * mucho más fresca.
  */
 export function estadoIngesta(
   iso: string | null,
   ahora = new Date(),
 ): { texto: string; tone: ActualizacionTone } {
-  return _estadoRelativo('Ingesta:', iso, ahora)
+  return _estadoRelativo('Oportunidades:', iso, ahora)
 }
 
 export function haceCuanto(iso: string | null): string {
