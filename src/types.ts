@@ -7,6 +7,12 @@ export interface ItemCubso {
   distrito?: string | null
 }
 
+export interface Etapa {
+  etapa?: string | null
+  fec_ini?: string | null
+  fec_fin?: string | null
+}
+
 export interface Contrato {
   id: number
   nro_contratacion: string
@@ -27,6 +33,7 @@ export interface Contrato {
   pdf_storage_path?: string | null
   pdf_hash?: string | null
   items_json?: ItemCubso[] | null
+  etapas_json?: Etapa[] | null
   detalle_cargado?: boolean | null
   rank?: number
 }

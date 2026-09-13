@@ -20,7 +20,7 @@
  * Overlay cliente: telemetría/SCADA/OT/IoT → Núcleo;
  * integración / automatización / digital twin → Adyacente. Nunca degrada.
  */
-import type { Contrato } from '../types'
+import type { Contrato, Etapa } from '../types'
 import type { Califica, CodigoVeredicto, Modalidad, RubroAnalisis, TonoCond } from './analisis'
 import { cierraEn, cierraHoyInstante, dayOf, diffDays, limaDateISO, parseIso } from './format'
 
@@ -200,6 +200,7 @@ export const RUTA_DIA_BASE_COLS = [
   'categoria_it',
   'relevancia_ia',
   'nom_area_usuaria',
+  'etapas_json',
 ] as const
 
 export const RUTA_DIA_COLS = [
@@ -633,4 +634,86 @@ export function aplicarFiltros(
     }
     return true
   })
+}
+
+// ── Etapas / ventana de consultas y absoluciones ────────────────────────────────
+const KW_ETAPA_CONSULTA = ['consulta', 'absolucion']
+
+/** La etapa corresponde a consultas/absoluciones (SEACE etiqueta variable). */
+export function esEtapaConsultas(nombre: string | null | undefined): boolean {
+  if (!nombre) return false
+  const n = norm(nombre)
+  return KW_ETAPA_CONSULTA.some(kw => n.includes(kw))
+}
+
+export interface EstadoConsultas {
+  tiene: boolean
+  abierta: boolean
+  ini: string | null
+  fin: string | null
+  etapa: string | null
+}
+
+/**
+ * Estado de la ventana de consultas a partir del cronograma (etapas_json):
+ * abierta (ahora dentro de [ini, fin]), futura (próxima por abrir) o cerrada.
+ */
+export function estadoConsultas(
+  etapas: Etapa[] | null | undefined,
+  ahora = new Date(),
+): EstadoConsultas {
+  const lista = (etapas ?? []).filter(e => esEtapaConsultas(e.etapa))
+  const now = ahora.getTime()
+
+  const abierta = lista.find(e => {
+    const ini = parseIso(e.fec_ini ?? null)?.getTime()
+    const fin = parseIso(e.fec_fin ?? null)?.getTime()
+    if (ini != null && now < ini) return false
+    if (fin != null && now > fin) return false
+    return true
+  })
+  if (abierta) {
+    return { tiene: true, abierta: true, ini: abierta.fec_ini ?? null, fin: abierta.fec_fin ?? null, etapa: abierta.etapa ?? null }
+  }
+
+  const futura = lista
+    .map(e => ({ e, iniMs: parseIso(e.fec_ini ?? null)?.getTime() }))
+    .filter((x): x is { e: Etapa; iniMs: number } => x.iniMs != null && x.iniMs > now)
+    .sort((a, b) => a.iniMs - b.iniMs)[0]
+  if (futura) {
+    return { tiene: true, abierta: false, ini: futura.e.fec_ini ?? null, fin: futura.e.fec_fin ?? null, etapa: futura.e.etapa ?? null }
+  }
+
+  const pasadas = lista
+    .map(e => ({ e, finMs: parseIso(e.fec_fin ?? null)?.getTime() }))
+    .filter((x): x is { e: Etapa; finMs: number } => x.finMs != null)
+    .sort((a, b) => b.finMs - a.finMs)
+  const ultima = pasadas[0]
+  if (ultima) {
+    return { tiene: true, abierta: false, ini: ultima.e.fec_ini ?? null, fin: ultima.e.fec_fin ?? null, etapa: ultima.e.etapa ?? null }
+  }
+
+  return { tiene: false, abierta: false, ini: null, fin: null, etapa: null }
+}
+
+/**
+ * Orden de postulables: vencimiento primero (hoy > mañana > semana > mes > resto)
+ * y score como desempate dentro de cada tramo. Lo que cierra antes se atiende antes.
+ */
+export function ordenarPostulables(items: Oportunidad[], ahora = new Date()): Oportunidad[] {
+  const bucket = (o: Oportunidad): number => {
+    if (!o.postulable) return 9
+    const d = cierraEn(o.contrato.fecha_fin_cotizacion, ahora).days
+    if (d == null) return 9
+    if (d <= 0) return 0
+    if (d === 1) return 1
+    if (d <= 7) return 2
+    if (d <= 30) return 3
+    return 4
+  }
+  return [...items].sort((a, b) =>
+    bucket(a) - bucket(b)
+    || b.score.total - a.score.total
+    || a.contrato.id - b.contrato.id,
+  )
 }

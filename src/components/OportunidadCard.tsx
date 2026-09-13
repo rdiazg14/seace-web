@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../lib/rutaDia'
-import { nivelLabel } from '../lib/rutaDia'
+import { estadoConsultas, nivelLabel } from '../lib/rutaDia'
+import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 import { BotonVerTdr, BTN_SEACE_SECUNDARIO } from './BotonVerTdr'
@@ -51,14 +52,44 @@ function Veredicto({ o }: { o: Oportunidad }) {
   )
 }
 
+function ConsultaPill({ c }: { c: Contrato }) {
+  const st = estadoConsultas(c.etapas_json)
+  if (!st.tiene) return null
+  if (st.abierta) {
+    return (
+      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+        Consultas abiertas{st.fin ? ` · hasta ${fmtFechaHora(st.fin)}` : ''}
+      </span>
+    )
+  }
+  if (st.ini && new Date(st.ini).getTime() > Date.now()) {
+    return (
+      <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
+        Consultas abren {fmtFechaHora(st.ini)}
+      </span>
+    )
+  }
+  return (
+    <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+      Consultas cerradas
+    </span>
+  )
+}
+
 export default function OportunidadCard({
   o,
   rank,
   compact = false,
+  oculto = false,
+  onHide,
+  onRestore,
 }: {
   o: Oportunidad
   rank: number
   compact?: boolean
+  oculto?: boolean
+  onHide?: () => void
+  onRestore?: () => void
 }) {
   const c = o.contrato
   const cierre = cierraEn(c.fecha_fin_cotizacion)
@@ -67,6 +98,8 @@ export default function OportunidadCard({
   const cerrado = !o.postulable && !porAbrir
   const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
   const analisisNavLock = useRef(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const puedeOcultar = !!onHide || !!onRestore
 
   return (
     <article
@@ -101,9 +134,57 @@ export default function OportunidadCard({
             {c.fecha_fin_cotizacion && !cerrado && !porAbrir && (
               <CierraPill label={cierre.label} tone={cierre.tone} />
             )}
+            <ConsultaPill c={c} />
           </div>
         </div>
-        <span className="shrink-0 font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
+          {puedeOcultar && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(v => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                title="Opciones"
+                className="rounded-md px-1.5 py-0.5 text-sm leading-none text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Cerrar menú"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    {oculto
+                      ? onRestore && (
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); onRestore() }}
+                            className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            Restaurar
+                          </button>
+                        )
+                      : onHide && (
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); onHide() }}
+                            className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            Ocultar
+                          </button>
+                        )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {porAbrir && c.fecha_ini_cotizacion && (
@@ -127,7 +208,7 @@ export default function OportunidadCard({
       {!compact && (
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
           {c.fecha_publica && <span>Pub. {fmtFecha(c.fecha_publica)}</span>}
-          {c.fecha_fin_cotizacion && <span>Cierre {fmtFecha(c.fecha_fin_cotizacion)}</span>}
+          {c.fecha_fin_cotizacion && <span>Cierre {fmtFechaHora(c.fecha_fin_cotizacion)}</span>}
           {c.tipo_cotizacion && <span>Tipo cotiz. {c.tipo_cotizacion}</span>}
           {o.overlay === 'telemetria' && <span className="text-teal-600 dark:text-teal-400">Overlay telemetría/OT</span>}
           {o.overlay === 'integracion' && <span className="text-violet-600 dark:text-violet-300">Overlay integración</span>}
