@@ -68,6 +68,12 @@ export default function Navbar() {
               <p className="text-[10px] uppercase tracking-wide text-slate-400">{perfil.rol}</p>
             </div>
           )}
+          <NavLink
+            to="/clave"
+            className="hidden rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 sm:inline dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Clave
+          </NavLink>
           <button
             type="button"
             onClick={() => void salir()}
@@ -125,6 +131,13 @@ export default function Navbar() {
               {perfil.email} · {perfil.rol}
             </p>
           )}
+          <NavLink
+            to="/clave"
+            className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            onClick={() => setOpen(false)}
+          >
+            Cambiar contraseña
+          </NavLink>
           <button
             type="button"
             onClick={() => void salir()}
