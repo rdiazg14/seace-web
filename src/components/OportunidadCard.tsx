@@ -138,7 +138,7 @@ export default function OportunidadCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className="font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
+          <span className="hidden font-mono text-[10px] text-slate-400 sm:inline">{nroContrato(c)}</span>
           {puedeOcultar && (
             <div className="relative">
               <button

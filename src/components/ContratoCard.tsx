@@ -44,7 +44,7 @@ export default function ContratoCard({
             <CierraPill label={cierre.label} tone={cierre.tone} />
           )}
         </div>
-        <span className="shrink-0 font-mono text-[10px] text-slate-400">{nroContrato(c)}</span>
+        <span className="hidden shrink-0 font-mono text-[10px] text-slate-400 sm:inline">{nroContrato(c)}</span>
       </div>
 
       <p className={`text-sm font-medium leading-snug text-slate-900 dark:text-slate-100 ${more ? '' : 'line-clamp-2'}`}>

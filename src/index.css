@@ -52,12 +52,31 @@ body,
   color: var(--text-primary);
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* `clip` recorta el desborde horizontal sin crear un scroll-container,
+     así el `position: sticky` del Navbar sigue funcionando. */
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Evita el doble-tap de zoom (300ms) en controles táctiles y el zoom
+   accidental al tocar botones/chips/links en móvil. */
+button,
+a,
+[role='button'],
+input,
+select,
+textarea {
+  touch-action: manipulation;
 }
 
 h1,
