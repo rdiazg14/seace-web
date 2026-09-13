@@ -181,7 +181,7 @@ export function cierraEn(
     month: 'short',
     timeZone: TZ,
   }).replace('.', '')
-  const label = `Cierra el ${diaMes}`
+  const label = `Cierra el ${diaMes} ${fmtHora(fin)}`
   if (daysCal !== null && daysCal <= 7) return { label, tone: 'semana', days: daysCal }
   if (daysCal !== null && daysCal <= 30) return { label, tone: 'mes', days: daysCal }
   return { label, tone: 'ok', days: daysCal }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import type { Contrato } from '../types'
 import {
   addCalendarDays,
@@ -12,8 +13,10 @@ import {
 import {
   ANALISIS_SCORE_SELECT,
   aplicarFiltros,
+  estadoConsultas,
   LINEA_CHIPS,
   NIVELES,
+  ordenarPostulables,
   puntuar,
   rankingActivo,
   resolverAnalisisParaContrato,
@@ -21,16 +24,14 @@ import {
   sliceDesdeFilaAnalisis,
   type AnalisisScoreSlice,
   type FiltroCierre,
-  type FiltroEstado,
   type NivelRubro,
-  type Oportunidad,
 } from '../lib/rutaDia'
 import { Chip, EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import OportunidadCard from '../components/OportunidadCard'
 
-const EXPANDS = [15, 50, 100, 500, 1000] as const
 const PAGE = 1000
 const ID_CHUNK = 200
+const TAM_PAGINA_OPCIONES = [10, 20, 50, 100] as const
 
 type AnalisisFilaScore = {
   contrato_id: number
@@ -96,6 +97,7 @@ async function fetchAnalisisScore(ids: number[]): Promise<AnalisisFilaScore[]> {
 }
 
 export default function RutaDia() {
+  const { session } = useAuth()
   const [raw, setRaw] = useState<Contrato[]>([])
   const [analisisFilas, setAnalisisFilas] = useState<AnalisisFilaScore[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,8 +105,12 @@ export default function RutaDia() {
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
   const [linea, setLinea] = useState<string | null>(null)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
-  const [estado, setEstado] = useState<FiltroEstado>('postulable')
-  const [mostrar, setMostrar] = useState(15)
+  const [estadoOtras, setEstadoOtras] = useState<'por_abrir' | 'cerrados'>('cerrados')
+  const [paginaPost, setPaginaPost] = useState(1)
+  const [paginaOtras, setPaginaOtras] = useState(1)
+  const [tamPagina, setTamPagina] = useState(10)
+  const [ocultos, setOcultos] = useState<Set<number>>(new Set())
+  const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [actualizado, setActualizado] = useState<string | null>(null)
   const [ingesta, setIngesta] = useState<string | null>(null)
 
@@ -149,6 +155,58 @@ export default function RutaDia() {
     return () => { cancelled = true }
   }, [])
 
+  // Proyectos ocultos por el usuario actual.
+  useEffect(() => {
+    const userId = session?.user.id
+    if (!userId) return
+    let cancelled = false
+    async function load() {
+      const { data, error } = await supabase
+        .from('ruta_ocultos')
+        .select('contrato_id')
+        .eq('user_id', userId)
+      if (!cancelled && !error) {
+        const ids = (data ?? []).map(r => (r as { contrato_id: number }).contrato_id)
+        setOcultos(new Set(ids))
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [session])
+
+  async function ocultar(id: number) {
+    const userId = session?.user.id
+    if (!userId) return
+    setOcultos(prev => new Set(prev).add(id))
+    const { error } = await supabase.from('ruta_ocultos').insert({ user_id: userId, contrato_id: id })
+    if (error) {
+      setOcultos(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
+  async function restaurar(id: number) {
+    const userId = session?.user.id
+    if (!userId) return
+    setOcultos(prev => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    const { error } = await supabase.from('ruta_ocultos').delete().eq('user_id', userId).eq('contrato_id', id)
+    if (error) {
+      setOcultos(prev => new Set(prev).add(id))
+    }
+  }
+
+  function resetPaginas() {
+    setPaginaPost(1)
+    setPaginaOtras(1)
+  }
+
   const today = limaDateISO()
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
@@ -161,15 +219,31 @@ export default function RutaDia() {
     [raw, analisisFilas],
   )
 
-  const filtrado = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre, estado }),
-    [scored, nivel, linea, cierre, estado],
-  )
-
-  const brief = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable' }).slice(0, 15),
+  // Postulables: todos, ordenados por vencimiento (hoy > mañana > semana > …) y score.
+  const postulablesBase = useMemo(
+    () => ordenarPostulables(aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable' })),
     [scored, nivel, linea, cierre],
   )
+  const postulablesVisibles = useMemo(
+    () => postulablesBase.filter(o => !ocultos.has(o.contrato.id)),
+    [postulablesBase, ocultos],
+  )
+  const ocultosList = useMemo(
+    () => postulablesBase.filter(o => ocultos.has(o.contrato.id)),
+    [postulablesBase, ocultos],
+  )
+  const otras = useMemo(
+    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras }),
+    [scored, nivel, linea, estadoOtras],
+  )
+
+  const totalPagPost = Math.max(1, Math.ceil(postulablesVisibles.length / tamPagina))
+  const pagPost = Math.min(paginaPost, totalPagPost)
+  const postPaginados = postulablesVisibles.slice((pagPost - 1) * tamPagina, pagPost * tamPagina)
+
+  const totalPagOtras = Math.max(1, Math.ceil(otras.length / tamPagina))
+  const pagOtras = Math.min(paginaOtras, totalPagOtras)
+  const otrasPaginados = otras.slice((pagOtras - 1) * tamPagina, pagOtras * tamPagina)
 
   const kpis = useMemo(() => {
     const ahora = new Date()
@@ -183,7 +257,9 @@ export default function RutaDia() {
     let nucleoCloud = 0
     let nucleoDev = 0
     let nucleoTel = 0
+    let consultasAbiertas = 0
     for (const o of vigentes) {
+      if (estadoConsultas(o.contrato.etapas_json, ahora).abierta) consultasAbiertas += 1
       if (o.nivel === 'nucleo') {
         nucleo += 1
         if (o.overlay === 'telemetria') nucleoTel += 1
@@ -201,11 +277,8 @@ export default function RutaDia() {
         else if (d <= weekEnd && d > today) cierranSemana += 1
       }
     }
-    return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel }
+    return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel, consultasAbiertas }
   }, [scored, today, tomorrow, weekEnd])
-
-  const visible: Oportunidad[] = filtrado.slice(0, mostrar)
-  const hayMas = filtrado.length > mostrar
 
   const headerAct = estadoActualizacion(actualizado)
   const headerIng = estadoIngesta(ingesta)
@@ -223,7 +296,7 @@ export default function RutaDia() {
           <div>
             <h1 className="text-xl text-[var(--text-primary)] sm:text-2xl">Ruta del día</h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Brief de oportunidades ENERTRONIC · score con análisis cuando hay TDR
+              Oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
           </div>
           <div className="space-y-0.5 text-right">
@@ -236,15 +309,16 @@ export default function RutaDia() {
       {error && <ErrorBox retry={() => window.location.reload()}>{error}</ErrorBox>}
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi label="Nuevos hoy" value={kpis.nuevosHoy} hint="postulables publicados hoy" />
           <Kpi label="Cierran hoy" value={kpis.cierranHoy} hint="hasta medianoche Lima" warn={kpis.cierranHoy > 0} />
           <Kpi label="Cierran mañana" value={kpis.cierranManana} hint="vigentes" warn={kpis.cierranManana > 0} />
           <Kpi label="Cierran esta semana" value={kpis.cierranSemana} hint="días 2–7" />
+          <Kpi label="Consultas abiertas" value={kpis.consultasAbiertas} hint="ventana para enviar consultas" warn={kpis.consultasAbiertas > 0} />
           <Kpi
             label="Vigentes núcleo"
             value={kpis.nucleo}
@@ -255,59 +329,34 @@ export default function RutaDia() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Brief del día · Top 15 postulables</h2>
+          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Postulables</h2>
           <p className="text-[11px] text-slate-500">
-            Solo postulables (vigente con ventana abierta ahora). En evaluación, por abrir y vencidos no entran aquí.
-          </p>
-        </div>
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-          </div>
-        ) : brief.length === 0 ? (
-          <EmptyState
-            title="Sin vigentes con esos filtros"
-            hint="Prueba otro rubro o rango de cierre. El brief no incluye por abrir, en evaluación ni vencidos."
-          />
-        ) : (
-          <div className="space-y-2">
-            {brief.map((o, i) => (
-              <OportunidadCard key={o.contrato.id} o={o} rank={i + 1} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Ranking completo</h2>
-          <p className="text-[11px] text-slate-500">
-            Por defecto solo postulables. Usa el chip para ver por abrir, en evaluación o cerrados.{' '}
-            {filtrado.length.toLocaleString('es-PE')} en vista actual.
+            Todos los postulables, ordenados por vencimiento (lo que cierra antes va primero).{' '}
+            {postulablesVisibles.length.toLocaleString('es-PE')} en vista.
           </p>
         </div>
 
         <div className="space-y-2">
           <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
-            <Chip active={nivel === null} onClick={() => setNivel(null)}>Todos los niveles</Chip>
+            <Chip active={nivel === null} onClick={() => { setNivel(null); resetPaginas() }}>Todos los niveles</Chip>
             {NIVELES.map(n => (
               <Chip
                 key={n.id}
                 active={nivel === n.id}
                 tone={n.id === 'nucleo' ? 'ok' : n.id === 'marginal' ? 'muted' : 'accent'}
-                onClick={() => setNivel(x => x === n.id ? null : n.id)}
+                onClick={() => { setNivel(x => x === n.id ? null : n.id); resetPaginas() }}
               >
                 {n.stars} {n.label}
               </Chip>
             ))}
           </div>
           <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
-            <Chip active={linea === null} onClick={() => setLinea(null)}>Todas las líneas</Chip>
+            <Chip active={linea === null} onClick={() => { setLinea(null); resetPaginas() }}>Todas las líneas</Chip>
             {LINEA_CHIPS.map(c => (
               <Chip
                 key={c.id}
                 active={linea === c.id}
-                onClick={() => setLinea(x => x === c.id ? null : c.id)}
+                onClick={() => { setLinea(x => x === c.id ? null : c.id); resetPaginas() }}
               >
                 {c.label}
               </Chip>
@@ -320,53 +369,113 @@ export default function RutaDia() {
               ['semana', 'Esta semana'],
               ['mes', 'Este mes'],
             ] as const).map(([id, label]) => (
-              <Chip key={id} active={cierre === id} onClick={() => setCierre(id)} tone={id === 'hoy' ? 'warn' : 'neutral'}>
+              <Chip key={id} active={cierre === id} onClick={() => { setCierre(id); resetPaginas() }} tone={id === 'hoy' ? 'warn' : 'neutral'}>
                 {label}
               </Chip>
             ))}
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Chip active={estado === 'postulable'} tone="ok" onClick={() => setEstado('postulable')}>
-              Postulables
-            </Chip>
-            <Chip active={estado === 'por_abrir'} tone="accent" onClick={() => setEstado('por_abrir')}>
-              Por abrir
-            </Chip>
-            <Chip active={estado === 'cerrados'} tone="warn" onClick={() => setEstado('cerrados')}>
-              En evaluación / cerrados
-            </Chip>
-          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-500">Mostrar</span>
-          {EXPANDS.map(n => (
-            <Chip key={n} active={mostrar === n} onClick={() => setMostrar(n)}>
-              Top {n}
+          <span className="text-[11px] text-slate-500">Por página</span>
+          {TAM_PAGINA_OPCIONES.map(n => (
+            <Chip key={n} active={tamPagina === n} onClick={() => { setTamPagina(n); resetPaginas() }}>
+              {n}
             </Chip>
           ))}
-          <Chip active={mostrar >= 999999} onClick={() => setMostrar(999999)}>
-            Todos
+        </div>
+
+        {loading ? (
+          <Skeleton className="h-40" />
+        ) : postPaginados.length === 0 ? (
+          <EmptyState title="Sin postulables con esos filtros" hint="Los filtros navegan; no borran el resto." />
+        ) : (
+          <div className="space-y-2">
+            {postPaginados.map((o, i) => (
+              <OportunidadCard
+                key={o.contrato.id}
+                o={o}
+                rank={(pagPost - 1) * tamPagina + i + 1}
+                compact={tamPagina > 50}
+                onHide={() => void ocultar(o.contrato.id)}
+              />
+            ))}
+            <Paginador
+              pagina={pagPost}
+              total={totalPagPost}
+              count={postulablesVisibles.length}
+              onChange={setPaginaPost}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Otras etapas</h2>
+          <p className="text-[11px] text-slate-500">
+            Por abrir, en evaluación o vencidos. No son postulables.{' '}
+            {otras.length.toLocaleString('es-PE')} en vista.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          <Chip active={estadoOtras === 'cerrados'} tone="warn" onClick={() => { setEstadoOtras('cerrados'); resetPaginas() }}>
+            En evaluación / cerrados
+          </Chip>
+          <Chip active={estadoOtras === 'por_abrir'} tone="accent" onClick={() => { setEstadoOtras('por_abrir'); resetPaginas() }}>
+            Por abrir
           </Chip>
         </div>
 
         {loading ? (
           <Skeleton className="h-40" />
-        ) : visible.length === 0 ? (
-          <EmptyState title="Nada en el ranking con esos filtros" hint="Los filtros navegan; no borran el resto." />
+        ) : otrasPaginados.length === 0 ? (
+          <EmptyState title="Nada en otras etapas" hint="No hay contratos por abrir, en evaluación ni vencidos." />
         ) : (
           <div className="space-y-2">
-            {visible.map((o, i) => (
-              <OportunidadCard key={o.contrato.id} o={o} rank={i + 1} compact={mostrar > 50} />
+            {otrasPaginados.map((o, i) => (
+              <OportunidadCard
+                key={o.contrato.id}
+                o={o}
+                rank={(pagOtras - 1) * tamPagina + i + 1}
+                compact={tamPagina > 50}
+              />
             ))}
-            {hayMas && (
-              <p className="text-center text-[11px] text-slate-400">
-                Mostrando {visible.length.toLocaleString('es-PE')} de {filtrado.length.toLocaleString('es-PE')}. Expande para ver más.
-              </p>
-            )}
+            <Paginador
+              pagina={pagOtras}
+              total={totalPagOtras}
+              count={otras.length}
+              onChange={setPaginaOtras}
+            />
           </div>
         )}
       </section>
+
+      {ocultosList.length > 0 && (
+        <section className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setMostrarOcultos(v => !v)}
+            className="text-sm font-medium text-slate-600 hover:text-teal-600 dark:text-slate-300"
+          >
+            {mostrarOcultos ? '▾' : '▸'} Ocultos ({ocultosList.length})
+          </button>
+          {mostrarOcultos && (
+            <div className="space-y-2">
+              {ocultosList.map((o, i) => (
+                <OportunidadCard
+                  key={o.contrato.id}
+                  o={o}
+                  rank={i + 1}
+                  oculto
+                  onRestore={() => void restaurar(o.contrato.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <p className="pb-6 text-[11px] text-slate-400">
         Con análisis: rubro 28 + califica 18 + margen% 18 + modalidad/pago 8+8 + plazo/riesgo 5+5 + vigencia/urgencia 10+10;
@@ -392,6 +501,46 @@ function Kpi({
       <p className="text-[11px] text-[var(--text-secondary)]">{label}</p>
       <p className={`mt-1 text-xl font-medium ${warn ? 'text-red-500' : 'text-[var(--text-primary)]'}`}>{value.toLocaleString('es-PE')}</p>
       <p className="text-[11px] text-[var(--text-secondary)]">{hint}</p>
+    </div>
+  )
+}
+
+function Paginador({
+  pagina,
+  total,
+  count,
+  onChange,
+}: {
+  pagina: number
+  total: number
+  count: number
+  onChange: (p: number) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {total > 1 && (
+        <button
+          type="button"
+          disabled={pagina <= 1}
+          onClick={() => onChange(pagina - 1)}
+          className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
+        >
+          ‹ Anterior
+        </button>
+      )}
+      <span className="text-[11px] text-slate-500">
+        Página {pagina} de {total} · {count.toLocaleString('es-PE')} resultados
+      </span>
+      {total > 1 && (
+        <button
+          type="button"
+          disabled={pagina >= total}
+          onClick={() => onChange(pagina + 1)}
+          className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-teal-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
+        >
+          Siguiente ›
+        </button>
+      )}
     </div>
   )
 }
