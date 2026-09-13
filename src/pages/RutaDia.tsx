@@ -111,8 +111,17 @@ export default function RutaDia() {
   const [tamPagina, setTamPagina] = useState(10)
   const [ocultos, setOcultos] = useState<Set<number>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
   const [actualizado, setActualizado] = useState<string | null>(null)
   const [ingesta, setIngesta] = useState<string | null>(null)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const apply = () => setFiltrosAbiertos(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -280,6 +289,7 @@ export default function RutaDia() {
     return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel, consultasAbiertas }
   }, [scored, today, tomorrow, weekEnd])
 
+  const filtrosActivos = (nivel ? 1 : 0) + (linea ? 1 : 0) + (cierre !== 'todos' ? 1 : 0)
   const headerAct = estadoActualizacion(actualizado)
   const headerIng = estadoIngesta(ingesta)
   const toneCls = (tone: string) =>
@@ -337,52 +347,76 @@ export default function RutaDia() {
         </div>
 
         <div className="space-y-2">
-          <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
-            <Chip active={nivel === null} onClick={() => { setNivel(null); resetPaginas() }}>Todos los niveles</Chip>
-            {NIVELES.map(n => (
-              <Chip
-                key={n.id}
-                active={nivel === n.id}
-                tone={n.id === 'nucleo' ? 'ok' : n.id === 'marginal' ? 'muted' : 'accent'}
-                onClick={() => { setNivel(x => x === n.id ? null : n.id); resetPaginas() }}
-              >
-                {n.stars} {n.label}
-              </Chip>
-            ))}
-          </div>
-          <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
-            <Chip active={linea === null} onClick={() => { setLinea(null); resetPaginas() }}>Todas las líneas</Chip>
-            {LINEA_CHIPS.map(c => (
-              <Chip
-                key={c.id}
-                active={linea === c.id}
-                onClick={() => { setLinea(x => x === c.id ? null : c.id); resetPaginas() }}
-              >
-                {c.label}
-              </Chip>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {([
-              ['todos', 'Cierre: todos'],
-              ['hoy', 'Cierran hoy'],
-              ['semana', 'Esta semana'],
-              ['mes', 'Este mes'],
-            ] as const).map(([id, label]) => (
-              <Chip key={id} active={cierre === id} onClick={() => { setCierre(id); resetPaginas() }} tone={id === 'hoy' ? 'warn' : 'neutral'}>
-                {label}
-              </Chip>
-            ))}
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => setFiltrosAbiertos(v => !v)}
+            aria-expanded={filtrosAbiertos}
+            className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+          >
+            <span className="flex items-center gap-1.5">
+              Filtros
+              {filtrosActivos > 0 && (
+                <span className="rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white">
+                  {filtrosActivos}
+                </span>
+              )}
+            </span>
+            <span aria-hidden className="text-slate-400">{filtrosAbiertos ? '▴' : '▾'}</span>
+          </button>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-500">Por página</span>
-          {TAM_PAGINA_OPCIONES.map(n => (
-            <Chip key={n} active={tamPagina === n} onClick={() => { setTamPagina(n); resetPaginas() }}>
-              {n}
-            </Chip>
-          ))}
+          {filtrosAbiertos && (
+            <div className="space-y-2">
+              <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
+                <Chip active={nivel === null} onClick={() => { setNivel(null); resetPaginas() }}>Todos los niveles</Chip>
+                {NIVELES.map(n => (
+                  <Chip
+                    key={n.id}
+                    active={nivel === n.id}
+                    tone={n.id === 'nucleo' ? 'ok' : n.id === 'marginal' ? 'muted' : 'accent'}
+                    onClick={() => { setNivel(x => x === n.id ? null : n.id); resetPaginas() }}
+                  >
+                    {n.stars} {n.label}
+                  </Chip>
+                ))}
+              </div>
+              <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1">
+                <Chip active={linea === null} onClick={() => { setLinea(null); resetPaginas() }}>Todas las líneas</Chip>
+                {LINEA_CHIPS.map(c => (
+                  <Chip
+                    key={c.id}
+                    active={linea === c.id}
+                    onClick={() => { setLinea(x => x === c.id ? null : c.id); resetPaginas() }}
+                  >
+                    {c.label}
+                  </Chip>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {([
+                  ['todos', 'Cierre: todos'],
+                  ['hoy', 'Cierran hoy'],
+                  ['semana', 'Esta semana'],
+                  ['mes', 'Este mes'],
+                ] as const).map(([id, label]) => (
+                  <Chip key={id} active={cierre === id} onClick={() => { setCierre(id); resetPaginas() }} tone={id === 'hoy' ? 'warn' : 'neutral'}>
+                    {label}
+                  </Chip>
+                ))}
+                <span className="ml-1 inline-flex items-center gap-1.5 border-l border-slate-200 pl-2 dark:border-slate-700">
+                  <span className="text-[11px] text-slate-500">Por página</span>
+                  <select
+                    value={tamPagina}
+                    onChange={e => { setTamPagina(Number(e.target.value)); resetPaginas() }}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    {TAM_PAGINA_OPCIONES.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {loading ? (
