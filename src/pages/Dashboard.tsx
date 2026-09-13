@@ -142,7 +142,7 @@ export default function Dashboard() {
 
   const topEntidades = useMemo(() => {
     const map = new Map<string, number>()
-    for (const c of postulables) map.set(c.entidad, (map.get(c.entidad) ?? 0) + 1)
+    for (const c of postulables) map.set(c.entidad || '—', (map.get(c.entidad || '—') ?? 0) + 1)
     return [...map.entries()].map(([name, total]) => ({ name: name.slice(0, 42), total }))
       .sort((a, b) => b.total - a.total).slice(0, 10)
   }, [postulables])
