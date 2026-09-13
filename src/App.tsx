@@ -13,6 +13,7 @@ import Observabilidad from './pages/Observabilidad'
 import Keywords from './pages/Keywords'
 import RutaDia from './pages/RutaDia'
 import AnalisisContrato from './pages/AnalisisContrato'
+import CambiarClave from './pages/CambiarClave'
 
 function Shell() {
   const { pathname } = useLocation()
@@ -28,6 +29,7 @@ function Shell() {
         <Route path="/buscar" element={<RequireAuth><Buscador /></RequireAuth>} />
         <Route path="/chat" element={<RequireAuth><Chat /></RequireAuth>} />
         <Route path="/docs" element={<RequireAuth><Docs /></RequireAuth>} />
+        <Route path="/clave" element={<RequireAuth><CambiarClave /></RequireAuth>} />
         <Route path="/usuarios" element={<RequireAuth admin><Usuarios /></RequireAuth>} />
         <Route path="/observabilidad" element={<RequireAuth admin><Observabilidad /></RequireAuth>} />
         <Route path="/keywords" element={<RequireAuth admin><Keywords /></RequireAuth>} />
