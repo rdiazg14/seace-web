@@ -338,8 +338,8 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={narrow ? 220 : 240}>
                 <BarChart data={chartLinea} barSize={narrow ? 14 : 22}>
                   <CartesianGrid stroke={grid} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: axis, fontSize: 10 }} interval={0} />
-                  <YAxis tick={{ fill: axis, fontSize: 11 }} width={28} allowDecimals={false} />
+                  <XAxis dataKey="name" tick={{ fill: axis, fontSize: narrow ? 9 : 10 }} interval={narrow ? 1 : 0} />
+                  <YAxis tick={{ fill: axis, fontSize: 11 }} width={narrow ? 22 : 28} allowDecimals={false} />
                   <Tooltip contentStyle={tip} />
                   <Bar dataKey="value" fill="#14B8A6" radius={[4, 4, 0, 0]} name="Postulables" />
                 </BarChart>
@@ -510,10 +510,10 @@ export default function Dashboard() {
             </ChartCard>
             <ChartCard title="Tipo de entidad (postulables)">
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={porTipoEnt} barSize={28}>
+                <BarChart data={porTipoEnt} barSize={narrow ? 20 : 28}>
                   <CartesianGrid stroke={grid} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: axis, fontSize: 10 }} interval={0} />
-                  <YAxis tick={{ fill: axis, fontSize: 11 }} width={32} />
+                  <XAxis dataKey="name" tick={{ fill: axis, fontSize: narrow ? 9 : 10 }} interval={narrow ? 1 : 0} />
+                  <YAxis tick={{ fill: axis, fontSize: 11 }} width={narrow ? 24 : 32} />
                   <Tooltip contentStyle={tip} />
                   <Bar dataKey="total" fill="#14B8A6" radius={[4, 4, 0, 0]} />
                 </BarChart>
