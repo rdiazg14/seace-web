@@ -200,11 +200,11 @@ export const RUTA_DIA_BASE_COLS = [
   'categoria_it',
   'relevancia_ia',
   'nom_area_usuaria',
-  'etapas_json',
 ] as const
 
 export const RUTA_DIA_COLS = [
   ...RUTA_DIA_BASE_COLS,
+  'etapas_json',
   'pdf_archivo_id',
   'pdf_storage_path',
   'pdf_hash',
