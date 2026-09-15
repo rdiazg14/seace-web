@@ -292,6 +292,7 @@ export default function AnalisisContrato() {
   const [error, setError] = useState<string | null>(null)
   const [error502, setError502] = useState(false)
   const [sinTdr, setSinTdr] = useState<string | null>(null)
+  const [sinAnalisis, setSinAnalisis] = useState(false)
   const [chatOpen, setChatOpen] = useState(isDesktopViewport)
   const [panelWidth, setPanelWidth] = useState<number>(() => readSavedPanelWidth())
   const [panelResizing, setPanelResizing] = useState(false)
@@ -308,6 +309,7 @@ export default function AnalisisContrato() {
     setError(null)
     setError502(false)
     setSinTdr(null)
+    setSinAnalisis(false)
     setData(null)
     try {
       const headers = await workerAuthHeaders({ 'Content-Type': 'application/json' })
@@ -369,6 +371,7 @@ export default function AnalisisContrato() {
       setError(null)
       setError502(false)
       setSinTdr(null)
+      setSinAnalisis(false)
       setData(null)
       try {
         const { data: row, error: err } = await supabase
@@ -390,7 +393,12 @@ export default function AnalisisContrato() {
           setLoading(false)
           return
         }
-        await fetchAnalisis(ac.signal)
+        // La IA ya pasó una única vez en el pipeline batch (analizar_postulables.py),
+        // que escribe en analisis_contrato. La página solo LEE ese resultado.
+        // No disparar análisis on-demand al abrir: si no hay análisis guardado,
+        // se muestra "sin análisis" y el usuario puede forzarlo manualmente.
+        setSinAnalisis(true)
+        setLoading(false)
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ac.signal.aborted) return
         setError(e instanceof Error ? e.message : 'No se pudo analizar')
@@ -481,6 +489,27 @@ export default function AnalisisContrato() {
       {sinTdr && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
           {sinTdr}
+        </div>
+      )}
+
+      {sinAnalisis && !loading && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400" />
+            <div>
+              <p className="font-medium">Este contrato aún no tiene análisis de IA.</p>
+              <p className="mt-1 text-[var(--text-secondary)]">
+                El análisis se ejecuta una sola vez, de forma automática, en el pipeline diario para los contratos con TDR disponible. Si este contrato es postulable y ya cuenta con TDR, el análisis debería aparecer en la próxima corrida.
+              </p>
+              <button
+                type="button"
+                onClick={() => void fetchAnalisis()}
+                className="mt-3 rounded-lg border border-teal-500 px-3 py-1.5 text-sm font-medium text-teal-600 hover:bg-teal-500/10 dark:text-teal-400"
+              >
+                Analizar ahora
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
