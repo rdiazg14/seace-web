@@ -1,7 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AI_PROXY, supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { workerAuthHeaders } from '../lib/workerAuth'
+import {
+  actualizarSesion,
+  borrarSesion,
+  cargarMensajes,
+  crearSesion,
+  guardarMensaje,
+  listarSesiones,
+  type SesionChat,
+} from '../lib/chatSesiones'
 import type { Contrato, ContratoRef } from '../types'
 import { EstadoPill } from '../components/Pills'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
@@ -13,6 +23,16 @@ const SUGERENCIAS = [
   'cloud o servicios en la nube',
 ]
 
+const BIENVENIDA =
+  'Soy el asistente SEACE con IA. Busco en los Términos de Referencia reales de los contratos vigentes. Pregúntame sobre requisitos técnicos, especificaciones, plazos o cualquier detalle.'
+
+const CONTEXTO_LIMITE = 1_000_000
+
+interface Uso {
+  prompt: number
+  completion: number
+}
+
 interface Msg {
   role: 'user' | 'bot'
   text: string
@@ -22,6 +42,8 @@ interface Msg {
   limit?: boolean
   stage?: string
   query?: string
+  tokens_prompt?: number
+  tokens_completion?: number
 }
 
 function TypingDots() {
@@ -102,9 +124,7 @@ const HISTORY_MAX_CHARS = 500
 /** Últimos 4 pares para el Worker. El embed/RAG solo ven `query`; el history no resuelve "ese contrato". */
 function buildChatHistory(messages: Msg[]): { role: 'user' | 'bot'; text: string }[] {
   const out: { role: 'user' | 'bot'; text: string }[] = []
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i]
-    if (i === 0 && m.role === 'bot') continue
+  for (const m of messages) {
     if (m.error || m.limit) continue
     if (m.role === 'bot' && !m.text.trim()) continue
     out.push({ role: m.role, text: m.text.slice(0, HISTORY_MAX_CHARS) })
@@ -136,19 +156,53 @@ function composeRagPrefill(q: string, nro: string, titulo: string, cat: string |
   return ctx ? `[Contexto: ${ctx}] ${q}` : q
 }
 
+function hace(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return ''
+  const diff = Date.now() - t
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return 'ahora'
+  if (min < 60) return `hace ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `hace ${h} h`
+  const d = Math.floor(h / 24)
+  return `hace ${d} d`
+}
+
 export default function Chat() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const prefillApplied = useRef(false)
   const [prefillNro, setPrefillNro] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Msg[]>([{
-    role: 'bot',
-    text: 'Soy el asistente SEACE con IA. Busco en los Términos de Referencia reales de 2,330 contratos vigentes. Pregúntame sobre requisitos técnicos, especificaciones, plazos o cualquier detalle.',
-  }])
+
+  const [messages, setMessages] = useState<Msg[]>([])
+  const [sesiones, setSesiones] = useState<SesionChat[]>([])
+  const [sesionId, setSesionId] = useState<string | null>(null)
+  const [totales, setTotales] = useState<Uso>({ prompt: 0, completion: 0 })
+  const [historialAbierto, setHistorialAbierto] = useState(false)
+  const [cargandoSesion, setCargandoSesion] = useState(false)
+
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const userId = session?.user?.id ?? null
+
+  async function refrescarSesiones() {
+    if (!userId) return
+    try {
+      setSesiones(await listarSesiones(userId))
+    } catch (e) {
+      console.error('listar sesiones', e)
+    }
+  }
+
+  useEffect(() => {
+    void refrescarSesiones()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   useEffect(() => {
     if (prefillApplied.current) return
@@ -176,31 +230,88 @@ export default function Chat() {
     })
   }
 
-  async function consumeJson(res: Response, query: string) {
+  async function abrirSesion(s: SesionChat) {
+    setCargandoSesion(true)
+    setSesionId(s.id)
+    setTotales({ prompt: s.tokens_prompt, completion: s.tokens_completion })
+    setHistorialAbierto(false)
+    setInput('')
+    try {
+      const rows = await cargarMensajes(s.id)
+      const msgs: Msg[] = []
+      for (const m of rows) {
+        const refs = m.refs ?? undefined
+        const contratos = refs?.length ? await loadContratos(refs) : undefined
+        msgs.push({
+          role: m.rol,
+          text: m.texto,
+          refs,
+          contratos,
+          error: m.error,
+          limit: m.limit_flag,
+          tokens_prompt: m.tokens_prompt,
+          tokens_completion: m.tokens_completion,
+        })
+      }
+      setMessages(msgs)
+    } catch (e) {
+      console.error('abrir sesion', e)
+    } finally {
+      setCargandoSesion(false)
+    }
+  }
+
+  function nuevaConversacion() {
+    abortRef.current?.abort()
+    setSesionId(null)
+    setMessages([])
+    setTotales({ prompt: 0, completion: 0 })
+    setHistorialAbierto(false)
+    setInput('')
+  }
+
+  async function eliminarSesion(s: SesionChat) {
+    try {
+      await borrarSesion(s.id)
+      if (s.id === sesionId) nuevaConversacion()
+      await refrescarSesiones()
+    } catch (e) {
+      console.error('borrar sesion', e)
+    }
+  }
+
+  async function consumeJson(res: Response, query: string): Promise<Msg> {
     const data = await res.json() as {
       respuesta?: string
       response?: string
       contratos_referenciados?: ContratoRef[]
+      usage?: Uso
       error?: string
     }
     const refs = data.contratos_referenciados ?? []
     const contratos = await loadContratos(refs)
-    patchLast({
+    const msg: Msg = {
+      role: 'bot',
       text: data.respuesta || data.response || 'No pude generar una respuesta.',
       refs,
       contratos,
       error: Boolean(data.error),
-      stage: undefined,
       query,
-    })
+      tokens_prompt: data.usage?.prompt ?? 0,
+      tokens_completion: data.usage?.completion ?? 0,
+    }
+    patchLast(msg)
+    return msg
   }
 
-  async function consumeSse(res: Response, query: string) {
+  async function consumeSse(res: Response, query: string): Promise<Msg> {
     const reader = res.body?.getReader()
     if (!reader) throw new Error('sin stream')
     const decoder = new TextDecoder()
     let buf = ''
     let text = ''
+    let finalRefs: ContratoRef[] = []
+    let usage: Uso = { prompt: 0, completion: 0 }
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -214,6 +325,7 @@ export default function Chat() {
           token?: string
           chunks?: number
           contratos_referenciados?: ContratoRef[]
+          usage?: Uso
         } | null
         if (!ev) continue
         if (ev.stage === 'searching') {
@@ -229,29 +341,48 @@ export default function Chat() {
           text += ev.token
           patchLast({ text, stage: 'Redactando la respuesta…', query })
         } else if (ev.stage === 'done') {
-          const refs = ev.contratos_referenciados ?? []
-          const contratos = await loadContratos(refs)
-          patchLast({
-            text: text.trim() ? text : 'No pude generar una respuesta.',
-            refs,
-            contratos,
-            stage: undefined,
-            query,
-          })
+          finalRefs = ev.contratos_referenciados ?? []
+          usage = ev.usage ?? { prompt: 0, completion: 0 }
         } else if (ev.stage === 'error') {
           throw new Error(ev.message || 'error SSE')
         }
       }
     }
+    const contratos = await loadContratos(finalRefs)
+    const msg: Msg = {
+      role: 'bot',
+      text: text.trim() ? text : 'No pude generar una respuesta.',
+      refs: finalRefs,
+      contratos,
+      query,
+      tokens_prompt: usage.prompt,
+      tokens_completion: usage.completion,
+    }
+    patchLast(msg)
+    return msg
   }
 
   async function enviar(texto = input) {
     const q = texto.trim()
-    if (!q || loading) return
+    if (!q || loading || !userId) return
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
     const history = buildChatHistory(messages)
+
+    // Asegura sesión (se crea en el primer envío, con el título = pregunta).
+    let sid = sesionId
+    if (!sid) {
+      try {
+        const s = await crearSesion(userId, q.slice(0, 40))
+        sid = s.id
+        setSesionId(s.id)
+        setTotales({ prompt: 0, completion: 0 })
+      } catch (e) {
+        console.error('crear sesion', e)
+      }
+    }
+
     setInput('')
     setMessages(m => [
       ...m,
@@ -259,6 +390,13 @@ export default function Chat() {
       { role: 'bot', text: '', stage: 'Buscando en los TDR…', query: q },
     ])
     setLoading(true)
+
+    if (sid) {
+      guardarMensaje({ sesion_id: sid, user_id: userId, rol: 'user', texto: q })
+        .catch(e => console.error('guardar user', e))
+    }
+
+    let bot: Msg | null = null
     try {
       const headers = await workerAuthHeaders({
         'Content-Type': 'application/json',
@@ -279,50 +417,158 @@ export default function Chat() {
           || data.error === 'rate_limited'
           || data.error === 'daily_limited'
           || data.error === 'over_capacity'
-        patchLast({
+        bot = {
+          role: 'bot',
           text: mensajeLimite(res.status, data),
           error: !isLimit,
           limit: isLimit,
-          stage: undefined,
           query: q,
-        })
-        return
-      }
-      const ct = res.headers.get('content-type') || ''
-      if (ct.includes('text/event-stream') && res.body) {
-        await consumeSse(res, q)
+        }
+        patchLast(bot)
       } else {
-        await consumeJson(res, q)
+        const ct = res.headers.get('content-type') || ''
+        if (ct.includes('text/event-stream') && res.body) {
+          bot = await consumeSse(res, q)
+        } else {
+          bot = await consumeJson(res, q)
+        }
       }
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        patchLast({
-          text: 'La conexión se interrumpió. Puedes reintentar la misma pregunta.',
-          error: true,
-          stage: undefined,
-          query: q,
-        })
-      } else {
-        patchLast({
-          text: 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.',
-          error: true,
-          stage: undefined,
-          query: q,
-        })
+      const abortado = (err as Error).name === 'AbortError'
+      bot = {
+        role: 'bot',
+        text: abortado
+          ? 'La conexión se interrumpió. Puedes reintentar la misma pregunta.'
+          : 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.',
+        error: true,
+        query: q,
       }
+      patchLast(bot)
     } finally {
       setLoading(false)
+    }
+
+    if (sid && bot) {
+      const np = totales.prompt + (bot.tokens_prompt ?? 0)
+      const nc = totales.completion + (bot.tokens_completion ?? 0)
+      const n = messages.length + 2
+      try {
+        await guardarMensaje({
+          sesion_id: sid,
+          user_id: userId,
+          rol: 'bot',
+          texto: bot.text,
+          refs: bot.refs ?? null,
+          tokens_prompt: bot.tokens_prompt ?? 0,
+          tokens_completion: bot.tokens_completion ?? 0,
+          error: bot.error ?? false,
+          limit_flag: bot.limit ?? false,
+        })
+        setTotales({ prompt: np, completion: nc })
+        await actualizarSesion(sid, {
+          tokens_prompt: np,
+          tokens_completion: nc,
+          n_mensajes: n,
+        })
+        void refrescarSesiones()
+      } catch (e) {
+        console.error('guardar bot', e)
+      }
     }
   }
 
   const last = messages[messages.length - 1]
   const streaming = loading && last?.role === 'bot'
-  const showWelcomeChips = messages.length === 1 && !loading
-  const showInlineChips = messages.length > 1 && !loading
+  const totalTokens = totales.prompt + totales.completion
+  const lastPrompt = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const tp = messages[i].tokens_prompt
+      if (tp) return tp
+    }
+    return 0
+  }, [messages])
+  const contextoPct = lastPrompt
+    ? Math.min(100, Math.round((lastPrompt / CONTEXTO_LIMITE) * 1000) / 10)
+    : 0
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-3.5rem)] max-w-[800px] flex-col px-3 sm:px-4">
+      {/* Barra superior: nueva conversación + uso */}
+      <div className="flex items-center gap-2 border-b border-[var(--border)] py-2">
+        <button
+          type="button"
+          onClick={nuevaConversacion}
+          className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:border-teal-500"
+        >
+          + Nueva conversación
+        </button>
+        <button
+          type="button"
+          onClick={() => setHistorialAbierto(v => !v)}
+          className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-primary)] hover:border-teal-500"
+        >
+          Historial ({sesiones.length})
+        </button>
+        <div className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
+            Tokens: {totalTokens.toLocaleString('es-PE')}
+          </span>
+          <span className="hidden rounded-full border border-[var(--border)] px-2 py-0.5 sm:inline">
+            Contexto: {lastPrompt.toLocaleString('es-PE')} / 1M ({contextoPct}%)
+          </span>
+        </div>
+      </div>
+
+      {/* Panel de historial */}
+      {historialAbierto && (
+        <div className="max-h-64 overflow-y-auto border-b border-[var(--border)] py-2">
+          {sesiones.length === 0 && (
+            <p className="px-1 py-2 text-xs text-[var(--text-secondary)]">Todavía no hay conversaciones guardadas.</p>
+          )}
+          <ul className="space-y-1">
+            {sesiones.map(s => (
+              <li
+                key={s.id}
+                className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 ${
+                  s.id === sesionId ? 'bg-teal-500/10' : 'hover:bg-[var(--bg-card)]'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => void abrirSesion(s)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="truncate text-sm text-[var(--text-primary)]">{s.titulo}</p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    {s.n_mensajes} msgs · {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens · {hace(s.updated_at)}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void eliminarSesion(s)}
+                  className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-red-500/10 hover:text-red-500"
+                  title="Eliminar"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-4">
+        {messages.length === 0 && !cargandoSesion && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3">
+            <p className="mb-1 text-[11px] font-medium text-teal-600 dark:text-teal-400">SEACE Bot</p>
+            <p className="text-sm">{BIENVENIDA}</p>
+          </div>
+        )}
+        {cargandoSesion && (
+          <p className="flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400">
+            <TypingDots /> Cargando conversación…
+          </p>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[92%] sm:max-w-[85%] ${m.role === 'user' ? '' : 'w-full'}`}>
@@ -395,9 +641,9 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
-      {(showWelcomeChips || showInlineChips) && (
+      {!loading && (
         <div className="flex flex-wrap items-center gap-2 pb-3">
-          {showInlineChips && (
+          {messages.length > 0 && (
             <span className="text-[11px] text-slate-400">Ejemplos</span>
           )}
           {SUGERENCIAS.map(s => (
