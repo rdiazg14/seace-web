@@ -30,7 +30,7 @@ import { Chip, EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import OportunidadCard from '../components/OportunidadCard'
 
 const PAGE = 1000
-const ID_CHUNK = 200
+const ID_CHUNK = 1000
 const TAM_PAGINA_OPCIONES = [10, 20, 50, 100] as const
 
 type AnalisisFilaScore = {
@@ -66,18 +66,28 @@ async function fetchUniverso(): Promise<Contrato[]> {
  * Round-trip a analisis_contrato (chunked por límite URL).
  * Select JSON path: solo encaje/economia/condiciones/veredicto del payload.
  * Hoy hay ~17 filas; se pide por ids postulables del universo.
+ * Los trozos van en paralelo (Promise.all), no secuenciales, para no
+ * sumar latencia de red en cada página de la Ruta del día.
  */
 async function fetchAnalisisScore(ids: number[]): Promise<AnalisisFilaScore[]> {
   if (ids.length === 0) return []
-  const out: AnalisisFilaScore[] = []
+  const chunks: number[][] = []
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
-    const chunk = ids.slice(i, i + ID_CHUNK)
-    const { data, error } = await supabase
-      .from('analisis_contrato')
-      .select(ANALISIS_SCORE_SELECT)
-      .in('contrato_id', chunk)
-    if (error) throw error
-    for (const row of data ?? []) {
+    chunks.push(ids.slice(i, i + ID_CHUNK))
+  }
+  const resultados = await Promise.all(
+    chunks.map(async (chunk) => {
+      const { data, error } = await supabase
+        .from('analisis_contrato')
+        .select(ANALISIS_SCORE_SELECT)
+        .in('contrato_id', chunk)
+      if (error) throw error
+      return data ?? []
+    }),
+  )
+  const out: AnalisisFilaScore[] = []
+  for (const rows of resultados) {
+    for (const row of rows) {
       const r = row as {
         contrato_id: number
         pdf_hash: string
