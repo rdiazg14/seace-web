@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Copy, Loader2, MessageCircle, X } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Copy, History, Loader2, MessageCircle, Trash2, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { workerAuthHeaders } from '../lib/workerAuth'
+import {
+  actualizarSesion,
+  borrarSesion,
+  cargarMensajes,
+  crearSesion,
+  guardarMensaje,
+  listarSesionesContrato,
+  type MensajeChat,
+  type SesionChat,
+} from '../lib/chatSesiones'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import {
@@ -781,28 +792,49 @@ function newMsgId(): string {
   return crypto.randomUUID()
 }
 
-function persistMsg(m: EscenaMsg): EscenaMsg {
-  const out: EscenaMsg = {
-    id: m.id,
-    role: m.role,
-    text: m.text,
-    type: m.type,
-    escenario: m.escenario,
+/** Serializa el estado rico de un mensaje bot para guardar en chat_mensajes.payload. */
+function payloadBot(m: EscenaMsg): Record<string, unknown> | null {
+  if (m.role !== 'bot') return null
+  return {
+    escenario: m.escenario ?? null,
+    clasificacion: m.clasificacion ?? null,
+    thought: m.thought ?? null,
+    model: m.model ?? null,
+    request_id: m.requestId ?? null,
+    usage: m.usage ?? null,
+  }
+}
+
+/** Reconstruye un EscenaMsg desde una fila persistida de chat_mensajes. */
+function msgDesdeFila(m: MensajeChat): EscenaMsg {
+  if (m.rol === 'user') {
+    return { id: newMsgId(), role: 'user', text: m.texto }
+  }
+  const base: EscenaMsg = {
+    id: newMsgId(),
+    role: 'bot',
+    text: m.texto,
     error: m.error,
-    limit: m.limit,
-    aviso: m.aviso,
-    query: m.query,
+    limit: m.limit_flag,
   }
-  if (m.progress) {
-    out.progress = true
-    if (m.phase) out.phase = m.phase
+  const p = m.payload
+  if (p && typeof p === 'object') {
+    const escenario = p.escenario ? hydrateEscenario(p.escenario) : null
+    base.escenario = escenario
+    base.clasificacion = (p.clasificacion && typeof p.clasificacion === 'object')
+      ? p.clasificacion as EscenaClasificacion
+      : undefined
+    base.thought = typeof p.thought === 'string' ? p.thought : null
+    base.model = typeof p.model === 'string' ? p.model : undefined
+    base.requestId = typeof p.request_id === 'string' ? p.request_id : undefined
+    base.usage = (p.usage && typeof p.usage === 'object') ? p.usage as UsoTokens : null
+    if (escenario && !base.error && !base.limit) {
+      base.progress = true
+      base.phase = 'redactar'
+      base.streamText = escenario.escenario
+    }
   }
-  if (m.clasificacion) out.clasificacion = m.clasificacion
-  if (m.usage) out.usage = m.usage
-  if (m.thought) out.thought = m.thought
-  if (m.model) out.model = m.model
-  if (m.requestId) out.requestId = m.requestId
-  return out
+  return base
 }
 
 // Precio USD por 1M tokens (input, output). Debe coincidir con el Worker.
@@ -1180,23 +1212,6 @@ function hydrateEscenario(raw: unknown): EscenarioPayload | null {
   return e
 }
 
-function hydrateMsgs(parsed: unknown): EscenaMsg[] {
-  if (!Array.isArray(parsed)) return []
-  return parsed.slice(-20).map((m) => {
-    if (!m || typeof m !== 'object') return null
-    const row = m as EscenaMsg
-    if (!row.id) row.id = newMsgId()
-    if (row.escenario) row.escenario = hydrateEscenario(row.escenario)
-    const saved = persistMsg(row)
-    // Mensajes completados previos al campo progress: reconstruir trace colapsado.
-    if (!saved.progress && saved.role === 'bot' && saved.escenario && !saved.error && !saved.limit && !saved.aviso) {
-      saved.progress = true
-      saved.phase = row.phase ?? 'redactar'
-    }
-    return saved
-  }).filter((m): m is EscenaMsg => Boolean(m && (m.role === 'user' || m.role === 'bot')))
-}
-
 function ChatEscenarios({
   contratoId,
   nro,
@@ -1225,12 +1240,15 @@ function ChatEscenarios({
   onClose: () => void
 }) {
   const navigate = useNavigate()
-  const STORAGE_KEY = `chat_escenarios_${contratoId}`
+  const { session } = useAuth()
+  const userId = session?.user?.id ?? null
   const [messages, setMessages] = useState<EscenaMsg[]>([])
+  const [sesionId, setSesionId] = useState<string | null>(null)
+  const [sesiones, setSesiones] = useState<SesionChat[]>([])
+  const [historialAbierto, setHistorialAbierto] = useState(false)
+  const [cargandoSesion, setCargandoSesion] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [skipPersist, setSkipPersist] = useState(false)
   const [hintFab, setHintFab] = useState(false)
   const [modelos, setModelos] = useState<string[]>([
     'gemini-3.7-flash',
@@ -1247,7 +1265,7 @@ function ChatEscenarios({
   const chips = (chipsIniciales && chipsIniciales.length > 0)
     ? chipsIniciales.map(c => c.trim()).filter(Boolean).map(c => c.slice(0, 40))
     : CHIPS_ESCENARIO
-  const showChips = !loading && messages.length === 0
+  const showChips = !loading && messages.length === 0 && !cargandoSesion
 
   const totalTokens = messages.reduce(
     (acc, m) => acc + (m.role === 'bot' ? usoTokensTotal(m.usage) : 0),
@@ -1258,38 +1276,85 @@ function ChatEscenarios({
     0,
   )
 
-  useEffect(() => {
-    setReady(false)
-    setSkipPersist(false)
+  async function refrescarSesiones() {
+    if (!userId) return
+    try {
+      setSesiones(await listarSesionesContrato(userId, contratoId))
+    } catch (e) {
+      console.error('listar sesiones contrato', e)
+    }
+  }
+
+  async function abrirSesion(s: SesionChat) {
+    setCargandoSesion(true)
+    setSesionId(s.id)
+    setHistorialAbierto(false)
     setInput('')
-    setLoading(false)
+    try {
+      const rows = await cargarMensajes(s.id)
+      setMessages(rows.map(msgDesdeFila))
+    } catch (e) {
+      console.error('abrir sesion contrato', e)
+      setMessages([])
+    } finally {
+      setCargandoSesion(false)
+    }
+  }
+
+  function nuevaConsulta() {
     if (streamRevealTimer.current) {
       clearTimeout(streamRevealTimer.current)
       streamRevealTimer.current = null
     }
+    setSesionId(null)
+    setMessages([])
+    setInput('')
+    setHistorialAbierto(false)
+  }
+
+  async function eliminarSesion(s: SesionChat) {
     try {
-      const saved = localStorage.getItem(`chat_escenarios_${contratoId}`)
-      setMessages(saved ? hydrateMsgs(JSON.parse(saved)) : [])
-    } catch {
-      setMessages([])
+      await borrarSesion(s.id)
+      if (s.id === sesionId) nuevaConsulta()
+      await refrescarSesiones()
+    } catch (e) {
+      console.error('borrar sesion contrato', e)
     }
-    setReady(true)
+  }
+
+  useEffect(() => {
+    if (!userId) return
+    let cancel = false
+    ;(async () => {
+      try {
+        const lista = await listarSesionesContrato(userId, contratoId)
+        if (cancel) return
+        setSesiones(lista)
+        // Recupera automáticamente la conversación más reciente del contrato.
+        if (lista.length > 0) await abrirSesion(lista[0])
+      } catch (e) {
+        console.error('cargar sesiones contrato', e)
+      }
+    })()
+    return () => { cancel = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, contratoId])
+
+  useEffect(() => {
+    setInput('')
+    setLoading(false)
+    setSesionId(null)
+    setMessages([])
+    setHistorialAbierto(false)
+    if (streamRevealTimer.current) {
+      clearTimeout(streamRevealTimer.current)
+      streamRevealTimer.current = null
+    }
   }, [contratoId])
 
   useEffect(() => () => {
     if (streamRevealTimer.current) clearTimeout(streamRevealTimer.current)
   }, [])
-
-  useEffect(() => {
-    if (!ready || skipPersist) return
-    try {
-      const toSave = messages
-        .filter(m => !(m.role === 'bot' && m.streaming && !m.escenario))
-        .map(persistMsg)
-        .slice(-20)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
-    } catch { /* quota */ }
-  }, [messages, ready, STORAGE_KEY, skipPersist])
 
   useEffect(() => {
     if (!open) return
@@ -1322,11 +1387,6 @@ function ChatEscenarios({
   function markFabSeen() {
     try { sessionStorage.setItem('seace-chat-fab-seen', '1') } catch { /* */ }
     setHintFab(false)
-  }
-
-  function nuevaConsulta() {
-    try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
-    setMessages([])
   }
 
   function onPanelResizeMouseDown(e: ReactMouseEvent) {
@@ -1366,8 +1426,7 @@ function ChatEscenarios({
 
   async function enviar(texto = input) {
     const q = texto.trim()
-    if (!q || loading) return
-    setSkipPersist(false)
+    if (!q || loading || !userId) return
     const history = buildEscenaHistory(messages)
     setInput('')
     setMessages(m => [
@@ -1385,12 +1444,31 @@ function ChatEscenarios({
     ])
     setLoading(true)
 
+    // Asegura sesión en BD (se crea en el primer envío, con el título = pregunta).
+    let sid = sesionId
+    if (!sid) {
+      try {
+        const s = await crearSesion(userId, q.slice(0, 40), contratoId)
+        sid = s.id
+        setSesionId(s.id)
+      } catch (e) {
+        console.error('crear sesion contrato', e)
+      }
+    }
+    if (sid) {
+      guardarMensaje({ sesion_id: sid, user_id: userId, rol: 'user', texto: q })
+        .catch(e => console.error('guardar user contrato', e))
+    }
+
+    let botFinal: EscenaMsg | null = null
     const patchBot = (upd: Partial<EscenaMsg> | ((prev: EscenaMsg) => EscenaMsg)) => {
       setMessages(m => {
         const next = [...m]
         const last = next[next.length - 1]
         if (!last || last.role !== 'bot') return m
-        next[next.length - 1] = typeof upd === 'function' ? upd(last) : { ...last, ...upd }
+        const resolved = typeof upd === 'function' ? upd(last) : { ...last, ...upd }
+        next[next.length - 1] = resolved
+        botFinal = resolved
         return next
       })
     }
@@ -1497,8 +1575,6 @@ function ChatEscenarios({
           return
         }
         if (res.status === 409 && payload.status === 'sin_analisis') {
-          setSkipPersist(true)
-          try { localStorage.removeItem(STORAGE_KEY) } catch { /* */ }
           failBot(
             payload.mensaje || 'Analizá el contrato primero. Recargá esta página y esperá a que termine el análisis.',
             { aviso: true },
@@ -1604,21 +1680,59 @@ function ChatEscenarios({
       if (streamErr) throw new Error(streamErr)
       if (!gotData) throw new Error('respuesta incompleta')
     } catch (err) {
+      const errMsg: EscenaMsg = {
+        id: newMsgId(),
+        role: 'bot',
+        type: 'error',
+        query: q,
+        text: err instanceof Error ? err.message : 'No pude recalcular el escenario',
+        error: true,
+      }
+      botFinal = errMsg
       setMessages(m => {
         const next = [...m]
         const prev = next[next.length - 1]
-        next[next.length - 1] = {
-          id: prev?.id ?? newMsgId(),
-          role: 'bot',
-          type: 'error',
-          query: q,
-          text: err instanceof Error ? err.message : 'No pude recalcular el escenario',
-          error: true,
-        }
+        next[next.length - 1] = { ...errMsg, id: prev?.id ?? errMsg.id }
         return next
       })
     } finally {
       setLoading(false)
+    }
+
+    if (sid && botFinal) {
+      const b = botFinal
+      const tokens = usoTokensTotal(b.usage)
+      const n = messages.length + 2
+      try {
+        await guardarMensaje({
+          sesion_id: sid,
+          user_id: userId,
+          rol: 'bot',
+          texto: b.text || (b.escenario?.escenario ?? ''),
+          tokens_prompt: b.usage?.prompt ?? 0,
+          tokens_completion: b.usage?.completion ?? 0,
+          error: b.error ?? false,
+          limit_flag: b.limit ?? false,
+          payload: payloadBot(b),
+        })
+        const acu = { prompt: 0, completion: 0 }
+        for (const m of messages) {
+          if (m.role === 'bot' && m.usage) {
+            acu.prompt += m.usage.prompt
+            acu.completion += m.usage.completion
+          }
+        }
+        acu.prompt += b.usage?.prompt ?? 0
+        acu.completion += b.usage?.completion ?? 0
+        await actualizarSesion(sid, {
+          tokens_prompt: acu.prompt,
+          tokens_completion: acu.completion,
+          n_mensajes: n,
+        })
+        void refrescarSesiones()
+      } catch (e) {
+        console.error('guardar bot contrato', e, tokens)
+      }
     }
   }
 
@@ -1664,24 +1778,79 @@ function ChatEscenarios({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Colapsar asistente"
-            className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
-          >
-            <X className="h-4 w-4 lg:hidden" />
-            <span className="hidden items-center gap-0.5 text-xs font-medium lg:inline-flex">
-              Colapsar
-              <ChevronRight className="h-4 w-4" />
-            </span>
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setHistorialAbierto(v => !v)}
+              aria-label="Historial de conversaciones"
+              className="flex items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+            >
+              <History className="h-3.5 w-3.5" />
+              <span>{sesiones.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Colapsar asistente"
+              className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+            >
+              <X className="h-4 w-4 lg:hidden" />
+              <span className="hidden items-center gap-0.5 text-xs font-medium lg:inline-flex">
+                Colapsar
+                <ChevronRight className="h-4 w-4" />
+              </span>
+            </button>
+          </div>
         </header>
+
+        {historialAbierto && (
+          <div className="max-h-56 shrink-0 overflow-y-auto border-b border-[var(--border)] px-3 py-2">
+            {sesiones.length === 0 && (
+              <p className="px-1 py-2 text-xs text-[var(--text-secondary)]">
+                Todavía no hay conversaciones guardadas para este contrato.
+              </p>
+            )}
+            <ul className="space-y-1">
+              {sesiones.map(s => (
+                <li
+                  key={s.id}
+                  className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 ${
+                    s.id === sesionId ? 'bg-teal-500/10' : 'hover:bg-[var(--bg-secondary)]'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void abrirSesion(s)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <p className="truncate text-sm text-[var(--text-primary)]">{s.titulo}</p>
+                    <p className="text-[11px] text-[var(--text-secondary)]">
+                      {s.n_mensajes} msgs · {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void eliminarSesion(s)}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-slate-400 hover:bg-red-500/10 hover:text-red-500"
+                    title="Eliminar"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div ref={listRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
           {showChips && (
             <p className="mb-3 text-[12px] text-[var(--text-secondary)]">
               Preguntá sobre este contrato. El análisis de la página no cambia.
+            </p>
+          )}
+          {cargandoSesion && (
+            <p className="mb-3 flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando conversación…
             </p>
           )}
           <div className="space-y-3">
