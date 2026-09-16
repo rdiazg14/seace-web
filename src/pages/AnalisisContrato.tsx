@@ -721,6 +721,11 @@ interface EscenaClasificacion {
   necesita_internet: boolean
 }
 
+interface UsoTokens {
+  prompt: number
+  completion: number
+}
+
 interface EscenaMsg {
   id?: string
   role: 'user' | 'bot'
@@ -738,6 +743,8 @@ interface EscenaMsg {
   streamText?: string
   /** Texto SSE acumulado antes del reveal (B5: colapsar antes de mostrar). */
   streamBuffer?: string
+  /** Tokens de la generación (prompt + completion), si el backend los devolvió. */
+  usage?: UsoTokens | null
 }
 
 type CotizarSseEvent = {
@@ -747,6 +754,7 @@ type CotizarSseEvent = {
   token?: string
   escenario?: EscenarioPayload
   clasificacion?: unknown
+  usage?: UsoTokens | null
 }
 
 function parseClasificacion(raw: unknown): EscenaClasificacion | undefined {
@@ -776,7 +784,28 @@ function persistMsg(m: EscenaMsg): EscenaMsg {
     if (m.phase) out.phase = m.phase
   }
   if (m.clasificacion) out.clasificacion = m.clasificacion
+  if (m.usage) out.usage = m.usage
   return out
+}
+
+// Precio de gemini-3.7-flash (USD por 1M tokens): input 0.75, output 3.75.
+const GEMINI_FLASH_INPUT_USD = 0.75
+const GEMINI_FLASH_OUTPUT_USD = 3.75
+
+function usoTokensTotal(u: UsoTokens | null | undefined): number {
+  return u ? u.prompt + u.completion : 0
+}
+
+function costoUsd(u: UsoTokens | null | undefined): number {
+  if (!u) return 0
+  return (u.prompt / 1_000_000) * GEMINI_FLASH_INPUT_USD
+    + (u.completion / 1_000_000) * GEMINI_FLASH_OUTPUT_USD
+}
+
+function fmtCostoUsd(n: number): string {
+  if (n <= 0) return '$0.00'
+  if (n < 0.01) return '<$0.01'
+  return `~$${n.toFixed(3).replace(/\.?0+$/, '')}`
 }
 
 function hayMontosReales(e: EscenarioPayload): boolean {
@@ -1093,6 +1122,19 @@ function ChatEscenarios({
     : CHIPS_ESCENARIO
   const showChips = !loading && messages.length === 0
 
+  const totalUso = messages.reduce<UsoTokens>(
+    (acc, m) => {
+      if (m.role === 'bot' && m.usage) {
+        acc.prompt += m.usage.prompt
+        acc.completion += m.usage.completion
+      }
+      return acc
+    },
+    { prompt: 0, completion: 0 },
+  )
+  const totalTokens = usoTokensTotal(totalUso)
+  const totalCosto = costoUsd(totalUso)
+
   useEffect(() => {
     setReady(false)
     setSkipPersist(false)
@@ -1303,6 +1345,7 @@ function ChatEscenarios({
         mensaje?: string
         error?: string
         respuesta?: string
+        usage?: UsoTokens | null
       }
 
       const applyJson = (payload: CotizarJson) => {
@@ -1348,6 +1391,7 @@ function ChatEscenarios({
           clasificacion: parseClasificacion(payload.clasificacion),
           streamText: e.escenario,
           streamBuffer: undefined,
+          usage: payload.usage ?? null,
         })
       }
 
@@ -1400,6 +1444,7 @@ function ChatEscenarios({
             clasificacion: parseClasificacion(ev.clasificacion),
             streamText: e.escenario,
             streamBuffer: undefined,
+            usage: ev.usage ?? null,
           })
           return
         }
@@ -1466,6 +1511,11 @@ function ChatEscenarios({
           <div className="min-w-0">
             <p className="text-sm font-medium text-[var(--text-primary)]">Asistente</p>
             <p className="truncate text-[11px] text-[var(--text-secondary)]">{nro}</p>
+            {totalTokens > 0 && (
+              <p className="text-[10px] text-teal-600 dark:text-teal-400">
+                ⚡ {totalTokens.toLocaleString('es-PE')} tokens · {fmtCostoUsd(totalCosto)} en esta sesión
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -1546,6 +1596,11 @@ function ChatEscenarios({
                         </button>
                       )}
                     </div>
+                  )}
+                  {m.role === 'bot' && !m.streaming && m.usage && usoTokensTotal(m.usage) > 0 && (
+                    <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                      ⚡ {usoTokensTotal(m.usage).toLocaleString('es-PE')} tokens · {fmtCostoUsd(costoUsd(m.usage))}
+                    </p>
                   )}
                 </div>
               </div>
