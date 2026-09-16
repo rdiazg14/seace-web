@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Copy, History, Loader2, MessageCircle, Trash2, X } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, CircleGauge, CircleCheckBig, Clock3, Copy, Flag, History, Layers, Loader2, MessageCircle, Trash2, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { workerAuthHeaders } from '../lib/workerAuth'
@@ -740,6 +740,16 @@ interface UsoTokens {
   total?: number
 }
 
+/** Metadatos de la respuesta de Gemini (finish reason, versión, latencia, etc.). */
+interface GeminiMeta {
+  finishReason?: string
+  modelVersion?: string
+  responseId?: string
+  serviceTier?: string
+  thinkingLevel?: string
+  latencyMs?: number
+}
+
 interface EscenaMsg {
   id?: string
   role: 'user' | 'bot'
@@ -765,6 +775,8 @@ interface EscenaMsg {
   model?: string
   /** ID de request (para copiar/reportar). */
   requestId?: string
+  /** Metadatos extra de Gemini (finish reason, versión, latencia, tier). */
+  meta?: GeminiMeta | null
 }
 
 type CotizarSseEvent = {
@@ -777,6 +789,7 @@ type CotizarSseEvent = {
   usage?: UsoTokens | null
   thought?: string | null
   model?: string
+  meta?: GeminiMeta | null
   models?: string[]
   request_id?: string
   consumido_usd?: number
@@ -804,6 +817,7 @@ function payloadBot(m: EscenaMsg): Record<string, unknown> | null {
     model: m.model ?? null,
     request_id: m.requestId ?? null,
     usage: m.usage ?? null,
+    meta: m.meta ?? null,
   }
 }
 
@@ -830,6 +844,7 @@ function msgDesdeFila(m: MensajeChat): EscenaMsg {
     base.model = typeof p.model === 'string' ? p.model : undefined
     base.requestId = typeof p.request_id === 'string' ? p.request_id : undefined
     base.usage = (p.usage && typeof p.usage === 'object') ? p.usage as UsoTokens : null
+    base.meta = (p.meta && typeof p.meta === 'object') ? p.meta as GeminiMeta : null
     if (escenario && !base.error && !base.limit) {
       base.progress = true
       base.phase = 'redactar'
@@ -923,8 +938,8 @@ function AnalizandoBlock({
         onClick={() => setOpen(true)}
         className="mb-2 flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
       >
-        <Brain className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
-        <span>Analizado ✓</span>
+        <CircleCheckBig className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
+        <span>Analizado</span>
       </button>
     )
   }
@@ -936,8 +951,8 @@ function AnalizandoBlock({
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-primary)]">
           {!collapsed && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />}
-          {collapsed && <Brain className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />}
-          {collapsed ? 'Analizado ✓' : 'Analizando...'}
+          {collapsed && <CircleCheckBig className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />}
+          {collapsed ? 'Analizado' : 'Analizando...'}
         </span>
         {collapsed && (
           <button
@@ -1085,7 +1100,8 @@ function Razonamiento({ thought }: { thought: string }) {
 function RespuestaStats({ m }: { m: EscenaMsg }) {
   const [copied, setCopied] = useState(false)
   const u = m.usage
-  if (!u && !m.model && !m.requestId) return null
+  const meta = m.meta
+  if (!u && !m.model && !m.requestId && !meta) return null
   const total = usoTokensTotal(u)
   const cost = costoUsd(u, m.model)
 
@@ -1096,6 +1112,26 @@ function RespuestaStats({ m }: { m: EscenaMsg }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch { /* portapapeles no disponible */ }
+  }
+
+  const finishLabel = (fr?: string): string => {
+    if (!fr) return ''
+    const map: Record<string, string> = {
+      STOP: 'Completado',
+      MAX_TOKENS: 'Límite de tokens',
+      SAFETY: 'Filtro de seguridad',
+      RECITATION: 'Recitación',
+      PROHIBITED_CONTENT: 'Contenido prohibido',
+      SPII: 'Datos sensibles',
+      OTHER: 'Otro',
+    }
+    return map[fr] ?? fr
+  }
+
+  const fmtLatencia = (ms?: number): string => {
+    if (typeof ms !== 'number') return ''
+    if (ms < 1000) return `${ms} ms`
+    return `${(ms / 1000).toFixed(2)} s`
   }
 
   return (
@@ -1125,6 +1161,40 @@ function RespuestaStats({ m }: { m: EscenaMsg }) {
               <div className="flex justify-between gap-3 border-t border-[var(--border)] pt-1">
                 <span className="font-medium">Total tokens</span>
                 <span className="font-medium text-[var(--text-primary)]">{u.total.toLocaleString('es-PE')}</span>
+              </div>
+            )}
+          </>
+        )}
+        {meta && (
+          <>
+            {meta.thinkingLevel && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5"><CircleGauge className="h-3.5 w-3.5" />Nivel de razonamiento</span>
+                <span className="font-medium text-[var(--text-primary)]">{meta.thinkingLevel === 'low' ? 'Bajo (low)' : meta.thinkingLevel}</span>
+              </div>
+            )}
+            {meta.finishReason && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5"><Flag className="h-3.5 w-3.5" />Finalización</span>
+                <span>{finishLabel(meta.finishReason)}</span>
+              </div>
+            )}
+            {typeof meta.latencyMs === 'number' && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />Latencia</span>
+                <span>{fmtLatencia(meta.latencyMs)}</span>
+              </div>
+            )}
+            {meta.serviceTier && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" />Tier de servicio</span>
+                <span>{meta.serviceTier}</span>
+              </div>
+            )}
+            {meta.modelVersion && (
+              <div className="flex justify-between gap-3">
+                <span>Versión del modelo</span>
+                <span className="truncate font-mono text-[10px]" title={meta.modelVersion}>{meta.modelVersion}</span>
               </div>
             )}
           </>
@@ -1569,6 +1639,7 @@ function ChatEscenarios({
         usage?: UsoTokens | null
         thought?: string | null
         model?: string
+        meta?: GeminiMeta | null
         models?: string[]
         request_id?: string
         consumido_usd?: number
@@ -1634,6 +1705,7 @@ function ChatEscenarios({
           usage: payload.usage ?? null,
           thought: payload.thought ?? null,
           model: payload.model,
+          meta: payload.meta ?? null,
           requestId: payload.request_id,
         })
         applyMeta(payload)
@@ -1691,6 +1763,7 @@ function ChatEscenarios({
             usage: ev.usage ?? null,
             thought: ev.thought ?? null,
             model: ev.model,
+            meta: ev.meta ?? null,
             requestId: ev.request_id,
           })
           applyMeta(ev)
