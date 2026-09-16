@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Copy, Loader2, MessageCircle, X } from 'lucide-react'
 import { supabase, AI_PROXY } from '../lib/supabase'
 import { workerAuthHeaders } from '../lib/workerAuth'
 import type { Contrato } from '../types'
@@ -724,6 +724,7 @@ interface EscenaClasificacion {
 interface UsoTokens {
   prompt: number
   completion: number
+  cached?: number
 }
 
 interface EscenaMsg {
@@ -745,6 +746,12 @@ interface EscenaMsg {
   streamBuffer?: string
   /** Tokens de la generación (prompt + completion), si el backend los devolvió. */
   usage?: UsoTokens | null
+  /** Razonamiento interno del modelo (thinking), colapsado con icono de cerebro. */
+  thought?: string | null
+  /** Modelo que generó la respuesta. */
+  model?: string
+  /** ID de request (para copiar/reportar). */
+  requestId?: string
 }
 
 type CotizarSseEvent = {
@@ -755,6 +762,13 @@ type CotizarSseEvent = {
   escenario?: EscenarioPayload
   clasificacion?: unknown
   usage?: UsoTokens | null
+  thought?: string | null
+  model?: string
+  models?: string[]
+  request_id?: string
+  consumido_usd?: number
+  presupuesto_usd?: number | null
+  saldo_usd?: number | null
 }
 
 function parseClasificacion(raw: unknown): EscenaClasificacion | undefined {
@@ -785,27 +799,52 @@ function persistMsg(m: EscenaMsg): EscenaMsg {
   }
   if (m.clasificacion) out.clasificacion = m.clasificacion
   if (m.usage) out.usage = m.usage
+  if (m.thought) out.thought = m.thought
+  if (m.model) out.model = m.model
+  if (m.requestId) out.requestId = m.requestId
   return out
 }
 
-// Precio de gemini-3.7-flash (USD por 1M tokens): input 0.75, output 3.75.
-const GEMINI_FLASH_INPUT_USD = 0.75
-const GEMINI_FLASH_OUTPUT_USD = 3.75
+// Precio USD por 1M tokens (input, output). Debe coincidir con el Worker.
+const MODEL_PRECIOS: Record<string, { input: number; output: number }> = {
+  'gemini-3.7-flash': { input: 0.75, output: 3.75 },
+  'gemini-3.6-flash': { input: 0.75, output: 3.75 },
+  'gemini-3.1-flash-lite': { input: 0.25, output: 1.5 },
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
+}
+
+const MODEL_LABELS: Record<string, string> = {
+  'gemini-3.7-flash': '3.7 Flash',
+  'gemini-3.6-flash': '3.6 Flash',
+  'gemini-3.1-flash-lite': '3.1 Flash-Lite',
+  'gemini-3.1-pro-preview': '3.1 Pro',
+}
+
+function labelModelo(m: string | null | undefined): string {
+  if (!m) return ''
+  return MODEL_LABELS[m] ?? m
+}
 
 function usoTokensTotal(u: UsoTokens | null | undefined): number {
   return u ? u.prompt + u.completion : 0
 }
 
-function costoUsd(u: UsoTokens | null | undefined): number {
+function costoUsd(u: UsoTokens | null | undefined, model?: string | null): number {
   if (!u) return 0
-  return (u.prompt / 1_000_000) * GEMINI_FLASH_INPUT_USD
-    + (u.completion / 1_000_000) * GEMINI_FLASH_OUTPUT_USD
+  const p = MODEL_PRECIOS[model ?? ''] ?? MODEL_PRECIOS['gemini-3.7-flash']
+  return (u.prompt / 1_000_000) * p.input + (u.completion / 1_000_000) * p.output
 }
 
 function fmtCostoUsd(n: number): string {
   if (n <= 0) return '$0.00'
   if (n < 0.01) return '<$0.01'
-  return `~$${n.toFixed(3).replace(/\.?0+$/, '')}`
+  return `$${n.toFixed(3).replace(/\.?0+$/, '')}`
+}
+
+function fmtUsd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—'
+  const sign = n < 0 ? '-' : ''
+  return `${sign}$${Math.abs(n).toFixed(2)}`
 }
 
 function hayMontosReales(e: EscenarioPayload): boolean {
@@ -984,6 +1023,84 @@ function ChatMedia({ tabla, grafica }: { tabla: ChatTabla | null; grafica: ChatG
   return null
 }
 
+function Razonamiento({ thought }: { thought: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)]/50">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-[var(--text-secondary)]"
+      >
+        <Brain className="h-4 w-4 shrink-0 text-purple-500 dark:text-purple-400" />
+        <span>Razonamiento</span>
+        <ChevronRight className={`ml-auto h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <div className="border-t border-[var(--border)] px-3 py-2">
+          <MarkdownRenderer content={thought} className="text-xs text-[var(--text-secondary)]" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RespuestaStats({ m }: { m: EscenaMsg }) {
+  const [copied, setCopied] = useState(false)
+  const u = m.usage
+  if (!u && !m.model && !m.requestId) return null
+  const total = usoTokensTotal(u)
+  const cost = costoUsd(u, m.model)
+
+  const copyId = async () => {
+    if (!m.requestId) return
+    try {
+      await navigator.clipboard.writeText(m.requestId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* portapapeles no disponible */ }
+  }
+
+  return (
+    <details className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)]/50">
+      <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-medium text-[var(--text-secondary)]">
+        <span>Estadísticas de la respuesta</span>
+        <span className="text-[10px] text-slate-400">⚡ {total.toLocaleString('es-PE')} tokens · {fmtCostoUsd(cost)}</span>
+      </summary>
+      <div className="space-y-1 border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+        {m.model && (
+          <div className="flex justify-between gap-3">
+            <span>Modelo</span>
+            <span className="font-medium text-[var(--text-primary)]">{labelModelo(m.model)}</span>
+          </div>
+        )}
+        {u && (
+          <>
+            <div className="flex justify-between gap-3"><span>Input tokens</span><span>{u.prompt.toLocaleString('es-PE')}</span></div>
+            <div className="flex justify-between gap-3"><span>Output tokens</span><span>{u.completion.toLocaleString('es-PE')}</span></div>
+            {typeof u.cached === 'number' && u.cached > 0 && (
+              <div className="flex justify-between gap-3"><span>Cached input tokens</span><span>{u.cached.toLocaleString('es-PE')}</span></div>
+            )}
+          </>
+        )}
+        {m.requestId && (
+          <div className="flex items-center justify-between gap-3">
+            <span className="truncate font-mono text-[10px]" title={m.requestId}>req {m.requestId.slice(0, 8)}…</span>
+            <button
+              type="button"
+              onClick={copyId}
+              className="flex items-center gap-1 text-teal-600 hover:text-teal-500 dark:text-teal-400"
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? 'Copiado' : 'Copiar ID'}
+            </button>
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
 function EscenarioCard({ e }: { e: EscenarioPayload }) {
   const marco = hayMontosReales(e)
   const tabla = tablaValida(e.tabla) ? e.tabla : null
@@ -1115,6 +1232,16 @@ function ChatEscenarios({
   const [ready, setReady] = useState(false)
   const [skipPersist, setSkipPersist] = useState(false)
   const [hintFab, setHintFab] = useState(false)
+  const [modelos, setModelos] = useState<string[]>([
+    'gemini-3.7-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-pro-preview',
+  ])
+  const [modelo, setModelo] = useState<string>('gemini-3.7-flash')
+  const [usoGlobal, setUsoGlobal] = useState<{ consumido_usd: number; saldo_usd: number | null }>({
+    consumido_usd: 0,
+    saldo_usd: null,
+  })
   const listRef = useRef<HTMLDivElement>(null)
   const streamRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chips = (chipsIniciales && chipsIniciales.length > 0)
@@ -1122,18 +1249,14 @@ function ChatEscenarios({
     : CHIPS_ESCENARIO
   const showChips = !loading && messages.length === 0
 
-  const totalUso = messages.reduce<UsoTokens>(
-    (acc, m) => {
-      if (m.role === 'bot' && m.usage) {
-        acc.prompt += m.usage.prompt
-        acc.completion += m.usage.completion
-      }
-      return acc
-    },
-    { prompt: 0, completion: 0 },
+  const totalTokens = messages.reduce(
+    (acc, m) => acc + (m.role === 'bot' ? usoTokensTotal(m.usage) : 0),
+    0,
   )
-  const totalTokens = usoTokensTotal(totalUso)
-  const totalCosto = costoUsd(totalUso)
+  const totalCosto = messages.reduce(
+    (acc, m) => acc + (m.role === 'bot' ? costoUsd(m.usage, m.model) : 0),
+    0,
+  )
 
   useEffect(() => {
     setReady(false)
@@ -1333,7 +1456,7 @@ function ChatEscenarios({
       const res = await fetch(`${AI_PROXY}/cotizar`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ contrato_id: contratoId, query: q, history }),
+        body: JSON.stringify({ contrato_id: contratoId, query: q, history, model: modelo }),
       })
       const ct = res.headers.get('content-type') || ''
       const isSse = ct.includes('text/event-stream')
@@ -1346,6 +1469,22 @@ function ChatEscenarios({
         error?: string
         respuesta?: string
         usage?: UsoTokens | null
+        thought?: string | null
+        model?: string
+        models?: string[]
+        request_id?: string
+        consumido_usd?: number
+        presupuesto_usd?: number | null
+        saldo_usd?: number | null
+      }
+
+      const applyMeta = (p: CotizarJson) => {
+        if (p.models && p.models.length) setModelos(p.models)
+        if (p.model) setModelo(p.model)
+        setUsoGlobal({
+          consumido_usd: p.consumido_usd ?? 0,
+          saldo_usd: p.saldo_usd ?? null,
+        })
       }
 
       const applyJson = (payload: CotizarJson) => {
@@ -1392,7 +1531,11 @@ function ChatEscenarios({
           streamText: e.escenario,
           streamBuffer: undefined,
           usage: payload.usage ?? null,
+          thought: payload.thought ?? null,
+          model: payload.model,
+          requestId: payload.request_id,
         })
+        applyMeta(payload)
       }
 
       if (!isSse || !res.ok) {
@@ -1445,7 +1588,11 @@ function ChatEscenarios({
             streamText: e.escenario,
             streamBuffer: undefined,
             usage: ev.usage ?? null,
+            thought: ev.thought ?? null,
+            model: ev.model,
+            requestId: ev.request_id,
           })
+          applyMeta(ev)
           return
         }
         if (ev.type === 'error') {
@@ -1581,6 +1728,7 @@ function ChatEscenarios({
                           collapsed={Boolean(m.streamBuffer || m.streamText || m.escenario)}
                         />
                       )}
+                      {m.thought && !m.streaming && <Razonamiento thought={m.thought} />}
                       {m.escenario ? (
                         <EscenarioCard e={m.escenario} />
                       ) : m.streamText ? (
@@ -1595,12 +1743,8 @@ function ChatEscenarios({
                           🔎 Buscar en TDRs relacionados
                         </button>
                       )}
+                      {!m.streaming && <RespuestaStats m={m} />}
                     </div>
-                  )}
-                  {m.role === 'bot' && !m.streaming && m.usage && usoTokensTotal(m.usage) > 0 && (
-                    <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-                      ⚡ {usoTokensTotal(m.usage).toLocaleString('es-PE')} tokens · {fmtCostoUsd(costoUsd(m.usage))}
-                    </p>
                   )}
                 </div>
               </div>
@@ -1634,6 +1778,27 @@ function ChatEscenarios({
               </button>
             </div>
           )}
+          <div className="mb-2 flex items-center gap-2">
+            <label className="relative inline-flex items-center">
+              <select
+                value={modelo}
+                onChange={e => setModelo(e.target.value)}
+                disabled={loading}
+                className="appearance-none rounded-full border border-[var(--border)] bg-[var(--bg-primary)] py-1 pl-3 pr-7 text-[11px] text-[var(--text-secondary)] outline-none focus:border-teal-500 disabled:opacity-50"
+                title="Modelo"
+              >
+                {(modelos.length ? modelos : ['gemini-3.7-flash']).map(mm => (
+                  <option key={mm} value={mm}>{labelModelo(mm)}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-[var(--text-secondary)]" />
+            </label>
+            {usoGlobal.saldo_usd != null ? (
+              <span className="text-[11px] text-[var(--text-secondary)]">Saldo {fmtUsd(usoGlobal.saldo_usd)}</span>
+            ) : usoGlobal.consumido_usd > 0 ? (
+              <span className="text-[11px] text-[var(--text-secondary)]">Consumido {fmtUsd(usoGlobal.consumido_usd)}</span>
+            ) : null}
+          </div>
           <form
             className="flex gap-2"
             onSubmit={e => { e.preventDefault(); void enviar() }}
