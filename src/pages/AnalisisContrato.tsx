@@ -736,6 +736,8 @@ interface UsoTokens {
   prompt: number
   completion: number
   cached?: number
+  thoughts?: number
+  total?: number
 }
 
 interface EscenaMsg {
@@ -858,13 +860,14 @@ function labelModelo(m: string | null | undefined): string {
 }
 
 function usoTokensTotal(u: UsoTokens | null | undefined): number {
-  return u ? u.prompt + u.completion : 0
+  return u ? u.prompt + u.completion + (u.thoughts ?? 0) : 0
 }
 
 function costoUsd(u: UsoTokens | null | undefined, model?: string | null): number {
   if (!u) return 0
-  const p = MODEL_PRECIOS[model ?? ''] ?? MODEL_PRECIOS['gemini-3.7-flash']
-  return (u.prompt / 1_000_000) * p.input + (u.completion / 1_000_000) * p.output
+  const p = MODEL_PRECIOS[model ?? ''] ?? MODEL_PRECIOS['gemini-3.1-flash-lite']
+  const outputTokens = u.completion + (u.thoughts ?? 0)
+  return (u.prompt / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output
 }
 
 function fmtCostoUsd(n: number): string {
@@ -1112,8 +1115,17 @@ function RespuestaStats({ m }: { m: EscenaMsg }) {
           <>
             <div className="flex justify-between gap-3"><span>Input tokens</span><span>{u.prompt.toLocaleString('es-PE')}</span></div>
             <div className="flex justify-between gap-3"><span>Output tokens</span><span>{u.completion.toLocaleString('es-PE')}</span></div>
+            {typeof u.thoughts === 'number' && u.thoughts > 0 && (
+              <div className="flex justify-between gap-3"><span>Thinking tokens</span><span>{u.thoughts.toLocaleString('es-PE')}</span></div>
+            )}
             {typeof u.cached === 'number' && u.cached > 0 && (
               <div className="flex justify-between gap-3"><span>Cached input tokens</span><span>{u.cached.toLocaleString('es-PE')}</span></div>
+            )}
+            {typeof u.total === 'number' && u.total > 0 && (
+              <div className="flex justify-between gap-3 border-t border-[var(--border)] pt-1">
+                <span className="font-medium">Total tokens</span>
+                <span className="font-medium text-[var(--text-primary)]">{u.total.toLocaleString('es-PE')}</span>
+              </div>
             )}
           </>
         )}
@@ -1253,11 +1265,11 @@ function ChatEscenarios({
   const [loading, setLoading] = useState(false)
   const [hintFab, setHintFab] = useState(false)
   const [modelos, setModelos] = useState<string[]>([
-    'gemini-3.7-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.7-flash',
     'gemini-3.1-pro-preview',
   ])
-  const [modelo, setModelo] = useState<string>('gemini-3.7-flash')
+  const [modelo, setModelo] = useState<string>('gemini-3.1-flash-lite')
   const [usoGlobal, setUsoGlobal] = useState<{ consumido_usd: number; saldo_usd: number | null }>({
     consumido_usd: 0,
     saldo_usd: null,
@@ -1552,6 +1564,7 @@ function ChatEscenarios({
         status?: string
         mensaje?: string
         error?: string
+        layer?: string
         respuesta?: string
         usage?: UsoTokens | null
         thought?: string | null
@@ -1574,7 +1587,12 @@ function ChatEscenarios({
 
       const applyJson = (payload: CotizarJson) => {
         if (res.status === 502) {
-          failBot('El servicio no respondió correctamente. Podés reintentar la misma pregunta.', {
+          const capa = payload.layer === 'gemini'
+            ? 'El servicio de IA (Gemini) no respondió correctamente.'
+            : payload.layer === 'supabase'
+              ? 'No se pudo leer el análisis desde la base de datos.'
+              : 'El servicio no respondió correctamente.'
+          failBot(`${capa} Podés reintentar la misma pregunta.`, {
             type: 'error',
             error: true,
             query: q,
