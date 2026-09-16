@@ -33,11 +33,17 @@ interface Uso {
   completion: number
 }
 
+interface WebSource {
+  uri: string
+  title: string
+}
+
 interface Msg {
   role: 'user' | 'bot'
   text: string
   refs?: ContratoRef[]
   contratos?: Contrato[]
+  webSources?: WebSource[]
   error?: boolean
   limit?: boolean
   stage?: string
@@ -185,6 +191,7 @@ export default function Chat() {
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [useWeb, setUseWeb] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -286,6 +293,7 @@ export default function Chat() {
       response?: string
       contratos_referenciados?: ContratoRef[]
       usage?: Uso
+      web_sources?: WebSource[]
       error?: string
     }
     const refs = data.contratos_referenciados ?? []
@@ -295,6 +303,7 @@ export default function Chat() {
       text: data.respuesta || data.response || 'No pude generar una respuesta.',
       refs,
       contratos,
+      webSources: data.web_sources ?? [],
       error: Boolean(data.error),
       query,
       tokens_prompt: data.usage?.prompt ?? 0,
@@ -311,6 +320,7 @@ export default function Chat() {
     let buf = ''
     let text = ''
     let finalRefs: ContratoRef[] = []
+    let finalWeb: WebSource[] = []
     let usage: Uso = { prompt: 0, completion: 0 }
     while (true) {
       const { done, value } = await reader.read()
@@ -326,6 +336,7 @@ export default function Chat() {
           chunks?: number
           contratos_referenciados?: ContratoRef[]
           usage?: Uso
+          web_sources?: WebSource[]
         } | null
         if (!ev) continue
         if (ev.stage === 'searching') {
@@ -342,6 +353,7 @@ export default function Chat() {
           patchLast({ text, stage: 'Redactando la respuesta…', query })
         } else if (ev.stage === 'done') {
           finalRefs = ev.contratos_referenciados ?? []
+          finalWeb = ev.web_sources ?? []
           usage = ev.usage ?? { prompt: 0, completion: 0 }
         } else if (ev.stage === 'error') {
           throw new Error(ev.message || 'error SSE')
@@ -354,6 +366,7 @@ export default function Chat() {
       text: text.trim() ? text : 'No pude generar una respuesta.',
       refs: finalRefs,
       contratos,
+      webSources: finalWeb,
       query,
       tokens_prompt: usage.prompt,
       tokens_completion: usage.completion,
@@ -405,7 +418,7 @@ export default function Chat() {
       const res = await fetch(AI_PROXY, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query: q, history }),
+        body: JSON.stringify({ query: q, history, use_web: useWeb }),
         signal: ac.signal,
       })
       if (!res.ok) {
@@ -615,6 +628,23 @@ export default function Chat() {
                   })}
                 </div>
               )}
+              {m.webSources && m.webSources.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-[11px] font-medium text-slate-500">Fuentes web</p>
+                  {m.webSources.map(src => (
+                    <a
+                      key={src.uri}
+                      href={src.uri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-teal-700 hover:border-teal-400 dark:border-slate-800 dark:bg-slate-900 dark:text-teal-400"
+                    >
+                      <span className="truncate">{src.title}</span>
+                      <span className="shrink-0 text-slate-400">↗</span>
+                    </a>
+                  ))}
+                </div>
+              )}
               {m.role === 'bot' && (m.error || m.limit) && (
                 <div className="mt-2 flex gap-3">
                   {m.query && (
@@ -668,33 +698,52 @@ export default function Chat() {
       )}
 
       <form
-        className="flex gap-2 pb-4 pt-1"
+        className="pb-4 pt-1"
         onSubmit={e => { e.preventDefault(); void enviar() }}
       >
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          disabled={loading}
-          placeholder="Pregunta sobre TDR, specs, plazos…"
-          className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
-        />
-        {loading ? (
-          <button
-            type="button"
-            onClick={() => abortRef.current?.abort()}
-            className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium dark:border-slate-600"
-          >
-            Detener
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
-          >
-            Enviar
-          </button>
-        )}
+        <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <input
+            type="checkbox"
+            checked={useWeb}
+            onChange={e => setUseWeb(e.target.checked)}
+            disabled={loading}
+            className="h-3.5 w-3.5 accent-teal-500"
+          />
+          Buscar en internet
+        </label>
+        <div className="flex gap-2">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void enviar()
+              }
+            }}
+            disabled={loading}
+            rows={2}
+            placeholder="Pregunta sobre TDR, specs, plazos… (Shift+Enter para salto de línea)"
+            className="max-h-40 min-h-[2.5rem] flex-1 resize-y rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
+          />
+          {loading ? (
+            <button
+              type="button"
+              onClick={() => abortRef.current?.abort()}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium dark:border-slate-600"
+            >
+              Detener
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="rounded-xl bg-teal-500 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+            >
+              Enviar
+            </button>
+          )}
+        </div>
       </form>
     </div>
   )

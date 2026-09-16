@@ -750,6 +750,11 @@ interface GeminiMeta {
   latencyMs?: number
 }
 
+interface WebSource {
+  uri: string
+  title: string
+}
+
 interface EscenaMsg {
   id?: string
   role: 'user' | 'bot'
@@ -777,6 +782,8 @@ interface EscenaMsg {
   requestId?: string
   /** Metadatos extra de Gemini (finish reason, versión, latencia, tier). */
   meta?: GeminiMeta | null
+  /** Fuentes web (grounding) cuando se usó búsqueda en internet. */
+  webSources?: WebSource[]
 }
 
 type CotizarSseEvent = {
@@ -792,6 +799,7 @@ type CotizarSseEvent = {
   meta?: GeminiMeta | null
   models?: string[]
   request_id?: string
+  web_sources?: WebSource[]
   consumido_usd?: number
   presupuesto_usd?: number | null
   saldo_usd?: number | null
@@ -818,6 +826,7 @@ function payloadBot(m: EscenaMsg): Record<string, unknown> | null {
     request_id: m.requestId ?? null,
     usage: m.usage ?? null,
     meta: m.meta ?? null,
+    web_sources: m.webSources ?? null,
   }
 }
 
@@ -845,6 +854,7 @@ function msgDesdeFila(m: MensajeChat): EscenaMsg {
     base.requestId = typeof p.request_id === 'string' ? p.request_id : undefined
     base.usage = (p.usage && typeof p.usage === 'object') ? p.usage as UsoTokens : null
     base.meta = (p.meta && typeof p.meta === 'object') ? p.meta as GeminiMeta : null
+    base.webSources = Array.isArray(p.web_sources) ? p.web_sources as WebSource[] : undefined
     if (escenario && !base.error && !base.limit) {
       base.progress = true
       base.phase = 'redactar'
@@ -1340,6 +1350,7 @@ function ChatEscenarios({
     'gemini-3.1-pro-preview',
   ])
   const [modelo, setModelo] = useState<string>('gemini-3.1-flash-lite')
+  const [useWeb, setUseWeb] = useState(false)
   const [usoGlobal, setUsoGlobal] = useState<{ consumido_usd: number; saldo_usd: number | null }>({
     consumido_usd: 0,
     saldo_usd: null,
@@ -1623,7 +1634,7 @@ function ChatEscenarios({
       const res = await fetch(`${AI_PROXY}/cotizar`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ contrato_id: contratoId, query: q, history, model: modelo }),
+        body: JSON.stringify({ contrato_id: contratoId, query: q, history, model: modelo, use_web: useWeb }),
       })
       const ct = res.headers.get('content-type') || ''
       const isSse = ct.includes('text/event-stream')
@@ -1642,6 +1653,7 @@ function ChatEscenarios({
         meta?: GeminiMeta | null
         models?: string[]
         request_id?: string
+        web_sources?: WebSource[]
         consumido_usd?: number
         presupuesto_usd?: number | null
         saldo_usd?: number | null
@@ -1707,6 +1719,7 @@ function ChatEscenarios({
           model: payload.model,
           meta: payload.meta ?? null,
           requestId: payload.request_id,
+          webSources: payload.web_sources ?? [],
         })
         applyMeta(payload)
       }
@@ -1765,6 +1778,7 @@ function ChatEscenarios({
             model: ev.model,
             meta: ev.meta ?? null,
             requestId: ev.request_id,
+            webSources: ev.web_sources ?? [],
           })
           applyMeta(ev)
           return
@@ -2002,6 +2016,23 @@ function ChatEscenarios({
                       ) : m.streamText ? (
                         <MarkdownRenderer content={m.streamText} className="text-sm" />
                       ) : null}
+                      {m.webSources && m.webSources.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          <p className="text-[11px] font-medium text-[var(--text-secondary)]">Fuentes web</p>
+                          {m.webSources.map(src => (
+                            <a
+                              key={src.uri}
+                              href={src.uri}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-teal-600 hover:border-teal-400 dark:text-teal-400"
+                            >
+                              <span className="truncate">{src.title}</span>
+                              <span className="shrink-0 text-[var(--text-secondary)]">↗</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
                       {mostrarBuscarInternet && (
                         <button
                           type="button"
@@ -2068,23 +2099,41 @@ function ChatEscenarios({
             ) : null}
           </div>
           <form
-            className="flex gap-2"
             onSubmit={e => { e.preventDefault(); void enviar() }}
           >
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              disabled={loading}
-              placeholder="¿Y si…?"
-              className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="shrink-0 rounded-xl bg-teal-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              Enviar
-            </button>
+            <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={useWeb}
+                onChange={e => setUseWeb(e.target.checked)}
+                disabled={loading}
+                className="h-3.5 w-3.5 accent-teal-500"
+              />
+              Buscar en internet
+            </label>
+            <div className="flex gap-2">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void enviar()
+                  }
+                }}
+                disabled={loading}
+                rows={2}
+                placeholder="¿Y si…? (Shift+Enter para salto de línea)"
+                className="min-w-0 flex-1 resize-y rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-teal-500 disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || loading}
+                className="shrink-0 rounded-xl bg-teal-500 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                Enviar
+              </button>
+            </div>
           </form>
         </footer>
       </aside>
