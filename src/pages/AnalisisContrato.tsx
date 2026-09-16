@@ -918,9 +918,10 @@ function AnalizandoBlock({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mb-2 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        className="mb-2 flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
       >
-        Analizado ✓
+        <Brain className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
+        <span>Analizado ✓</span>
       </button>
     )
   }
@@ -932,6 +933,7 @@ function AnalizandoBlock({
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-primary)]">
           {!collapsed && <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />}
+          {collapsed && <Brain className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />}
           {collapsed ? 'Analizado ✓' : 'Analizando...'}
         </span>
         {collapsed && (
@@ -1429,19 +1431,20 @@ function ChatEscenarios({
     if (!q || loading || !userId) return
     const history = buildEscenaHistory(messages)
     setInput('')
-    setMessages(m => [
-      ...m,
-      { id: newMsgId(), role: 'user', text: q },
-      {
-        id: newMsgId(),
-        role: 'bot',
-        text: '',
-        streaming: true,
-        progress: true,
-        phase: 'clasificar',
-        streamText: '',
-      },
-    ])
+    const botId = newMsgId()
+    // Mensaje bot rastreado de forma SÍNCRONA: React aplaza los updaters de
+    // setState, por lo que leer el estado dentro de un updater para guardar en
+    // BD era racy y perdía respuestas al refrescar.
+    let botMsg: EscenaMsg = {
+      id: botId,
+      role: 'bot',
+      text: '',
+      streaming: true,
+      progress: true,
+      phase: 'clasificar',
+      streamText: '',
+    }
+    setMessages(m => [...m, { id: newMsgId(), role: 'user', text: q }, botMsg])
     setLoading(true)
 
     // Asegura sesión en BD (se crea en el primer envío, con el título = pregunta).
@@ -1462,13 +1465,17 @@ function ChatEscenarios({
 
     let botFinal: EscenaMsg | null = null
     const patchBot = (upd: Partial<EscenaMsg> | ((prev: EscenaMsg) => EscenaMsg)) => {
+      // Rastrea síncronamente el estado real del mensaje bot, fuera del updater
+      // de React, para poder guardarlo en BD al final sin depender del render.
+      const prevBot = botMsg
+      const resolved = typeof upd === 'function' ? upd(prevBot) : { ...prevBot, ...upd }
+      botMsg = resolved
+      botFinal = resolved
       setMessages(m => {
         const next = [...m]
         const last = next[next.length - 1]
         if (!last || last.role !== 'bot') return m
-        const resolved = typeof upd === 'function' ? upd(last) : { ...last, ...upd }
         next[next.length - 1] = resolved
-        botFinal = resolved
         return next
       })
     }
@@ -1681,13 +1688,14 @@ function ChatEscenarios({
       if (!gotData) throw new Error('respuesta incompleta')
     } catch (err) {
       const errMsg: EscenaMsg = {
-        id: newMsgId(),
+        id: botMsg.id,
         role: 'bot',
         type: 'error',
         query: q,
         text: err instanceof Error ? err.message : 'No pude recalcular el escenario',
         error: true,
       }
+      botMsg = errMsg
       botFinal = errMsg
       setMessages(m => {
         const next = [...m]
