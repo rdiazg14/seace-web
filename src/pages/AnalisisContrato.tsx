@@ -776,6 +776,8 @@ interface EscenaMsg {
   usage?: UsoTokens | null
   /** Razonamiento interno del modelo (thinking), colapsado con icono de cerebro. */
   thought?: string | null
+  /** True mientras el razonamiento se está revelando en vivo (SSE) y debe verse expandido. */
+  thoughtStreaming?: boolean
   /** Modelo que generó la respuesta. */
   model?: string
   /** ID de request (para copiar/reportar). */
@@ -1085,8 +1087,10 @@ function ChatMedia({ tabla, grafica }: { tabla: ChatTabla | null; grafica: ChatG
   return null
 }
 
-function Razonamiento({ thought }: { thought: string }) {
+function Razonamiento({ thought, streaming }: { thought: string; streaming?: boolean }) {
   const [open, setOpen] = useState(false)
+  // Durante el streaming del razonamiento se fuerza expandido; al terminar se colapsa.
+  const expanded = streaming || open
   return (
     <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)]/50">
       <button
@@ -1095,10 +1099,11 @@ function Razonamiento({ thought }: { thought: string }) {
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-[var(--text-secondary)]"
       >
         <Brain className="h-4 w-4 shrink-0 text-purple-500 dark:text-purple-400" />
-        <span>Razonamiento</span>
-        <ChevronRight className={`ml-auto h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span>{streaming ? 'Razonando…' : 'Razonamiento'}</span>
+        {streaming && <span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-purple-500 align-middle" />}
+        <ChevronRight className={`ml-auto h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`} />
       </button>
-      {open && (
+      {expanded && (
         <div className="border-t border-[var(--border)] px-3 py-2">
           <MarkdownRenderer content={thought} className="text-xs text-[var(--text-secondary)]" />
         </div>
@@ -1745,6 +1750,18 @@ function ChatEscenarios({
           patchBot({ phase })
           return
         }
+        if (ev.type === 'thought' && ev.token) {
+          patchBot(prev => ({
+            ...prev,
+            thought: (prev.thought || '') + ev.token,
+            thoughtStreaming: true,
+          }))
+          return
+        }
+        if (ev.type === 'thought_done') {
+          patchBot(prev => ({ ...prev, thoughtStreaming: false }))
+          return
+        }
         if (ev.type === 'text' && ev.token) {
           patchBot(prev => {
             if (!prev.streamText) {
@@ -2007,10 +2024,12 @@ function ChatEscenarios({
                       {m.progress && (
                         <AnalizandoBlock
                           phase={m.phase}
-                          collapsed={Boolean(m.streamBuffer || m.streamText || m.escenario)}
+                          collapsed={Boolean(m.thought || m.streamBuffer || m.streamText || m.escenario)}
                         />
                       )}
-                      {m.thought && !m.streaming && <Razonamiento thought={m.thought} />}
+                      {m.thought && (m.thoughtStreaming || !m.streaming) && (
+                        <Razonamiento thought={m.thought} streaming={m.thoughtStreaming} />
+                      )}
                       {m.escenario ? (
                         <EscenarioCard e={m.escenario} />
                       ) : m.streamText ? (
