@@ -205,6 +205,8 @@ export const RUTA_DIA_BASE_COLS = [
 export const RUTA_DIA_COLS = [
   ...RUTA_DIA_BASE_COLS,
   'etapas_json',
+  'items_json',
+  'detalle_cargado',
   'pdf_archivo_id',
   'pdf_storage_path',
   'pdf_hash',

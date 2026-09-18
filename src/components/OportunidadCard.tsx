@@ -81,14 +81,14 @@ export default function OportunidadCard({
   rank,
   compact = false,
   oculto = false,
-  onHide,
+  onOpenDetalle,
   onRestore,
 }: {
   o: Oportunidad
   rank: number
   compact?: boolean
   oculto?: boolean
-  onHide?: () => void
+  onOpenDetalle?: () => void
   onRestore?: () => void
 }) {
   const c = o.contrato
@@ -99,7 +99,7 @@ export default function OportunidadCard({
   const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
   const analisisNavLock = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const puedeOcultar = !!onHide || !!onRestore
+  const puedeOcultar = !!onRestore
 
   return (
     <article
@@ -160,25 +160,15 @@ export default function OportunidadCard({
                     onClick={() => setMenuOpen(false)}
                   />
                   <div className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                    {oculto
-                      ? onRestore && (
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onRestore() }}
-                            className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
-                          >
-                            Restaurar
-                          </button>
-                        )
-                      : onHide && (
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onHide() }}
-                            className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
-                          >
-                            Ocultar
-                          </button>
-                        )}
+                    {oculto && onRestore && (
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); onRestore() }}
+                        className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                      >
+                        Restaurar
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -200,9 +190,16 @@ export default function OportunidadCard({
         </p>
       )}
 
-      <p className={`text-sm font-medium leading-snug text-slate-900 dark:text-slate-100 ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}>
+      <button
+        type="button"
+        onClick={onOpenDetalle}
+        title="Ver detalle del contrato"
+        className={`block w-full text-left text-sm font-medium leading-snug text-slate-900 dark:text-slate-100 ${
+          onOpenDetalle ? 'cursor-pointer hover:text-teal-600 dark:hover:text-teal-400' : ''
+        } ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}
+      >
         {titulo}
-      </p>
+      </button>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{c.entidad}</p>
 
       {!compact && (

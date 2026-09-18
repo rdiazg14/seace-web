@@ -28,6 +28,7 @@ import {
 } from '../lib/rutaDia'
 import { Chip, EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import OportunidadCard from '../components/OportunidadCard'
+import ContratoDetallePanel from '../components/ContratoDetallePanel'
 
 const PAGE = 1000
 const ID_CHUNK = 1000
@@ -121,6 +122,7 @@ export default function RutaDia() {
   const [tamPagina, setTamPagina] = useState(10)
   const [ocultos, setOcultos] = useState<Set<number>>(new Set())
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
+  const [detalleId, setDetalleId] = useState<number | null>(null)
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
   const [actualizado, setActualizado] = useState<string | null>(null)
   const [ingesta, setIngesta] = useState<string | null>(null)
@@ -237,6 +239,10 @@ export default function RutaDia() {
     })),
     [raw, analisisFilas],
   )
+
+  const detalleOportunidad = detalleId != null
+    ? scored.find(o => o.contrato.id === detalleId) ?? null
+    : null
 
   // Postulables: todos, ordenados por vencimiento (hoy > mañana > semana > …) y score.
   const postulablesBase = useMemo(
@@ -441,7 +447,7 @@ export default function RutaDia() {
                 o={o}
                 rank={(pagPost - 1) * tamPagina + i + 1}
                 compact={tamPagina > 50}
-                onHide={() => void ocultar(o.contrato.id)}
+                onOpenDetalle={() => setDetalleId(o.contrato.id)}
               />
             ))}
             <Paginador
@@ -484,6 +490,7 @@ export default function RutaDia() {
                 o={o}
                 rank={(pagOtras - 1) * tamPagina + i + 1}
                 compact={tamPagina > 50}
+                onOpenDetalle={() => setDetalleId(o.contrato.id)}
               />
             ))}
             <Paginador
@@ -514,6 +521,7 @@ export default function RutaDia() {
                   rank={i + 1}
                   oculto
                   onRestore={() => void restaurar(o.contrato.id)}
+                  onOpenDetalle={() => setDetalleId(o.contrato.id)}
                 />
               ))}
             </div>
@@ -525,6 +533,19 @@ export default function RutaDia() {
         Con análisis: rubro 28 + califica 18 + margen% 18 + modalidad/pago 8+8 + plazo/riesgo 5+5 + vigencia/urgencia 10+10;
         si no califica técnicamente → techo 35 (sigue en lista). Sin análisis: heurística rubro 50 + vigencia 25 + urgencia 15 + señales 10.
       </p>
+
+      {detalleOportunidad && (
+        <ContratoDetallePanel
+          contrato={detalleOportunidad.contrato}
+          oculto={ocultos.has(detalleOportunidad.contrato.id)}
+          onToggleOculto={(ocultoNuevo) => {
+            const id = detalleOportunidad.contrato.id
+            if (ocultoNuevo) void ocultar(id)
+            else void restaurar(id)
+          }}
+          onClose={() => setDetalleId(null)}
+        />
+      )}
     </div>
   )
 }
