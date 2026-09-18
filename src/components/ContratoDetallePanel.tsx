@@ -1,4 +1,5 @@
-import type { Contrato, Etapa, ItemCubso } from '../types'
+import { Eye, EyeOff } from 'lucide-react'
+import type { Contrato, Etapa } from '../types'
 import { Modal } from './Modal'
 import { EstadoPill } from './Pills'
 import { fmtFecha, fmtFechaHora, nroContrato, parseIso, seaceUrl, tituloContrato } from '../lib/format'
@@ -32,133 +33,89 @@ const ESTADO_ETAPA_LABEL: Record<EstadoEtapa, string> = {
 function Campo({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-[11px] text-[var(--text-secondary)]">{label}</p>
-      <p className="text-sm text-[var(--text-primary)]">{value}</p>
+      <p className="break-words text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   )
 }
 
-function RadioOculto({
+/** Control segmentado compacto: Visible / Oculto. Vive arriba, pegado a la derecha. */
+function SegmentedVisibilidad({
   oculto,
   onChange,
 }: {
   oculto: boolean
   onChange: (oculto: boolean) => void
 }) {
-  const opt = (val: boolean, label: string, desc: string) => {
+  const seg = (val: boolean, label: string, icon: React.ReactNode) => {
     const active = oculto === val
     return (
       <label
-        className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
+        title={val ? 'Ocultar convocatoria' : 'Mantener visible'}
+        className={`flex cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
           active
-            ? 'border-teal-500/60 bg-teal-500/10'
-            : 'border-[var(--border)] hover:border-teal-400/50'
+            ? 'bg-teal-500 text-white'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'
         }`}
       >
         <input
           type="radio"
-          name="oculto"
+          name="visibilidad"
           checked={active}
           onChange={() => onChange(val)}
-          className="mt-0.5 h-4 w-4 accent-teal-500"
+          className="sr-only"
         />
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-[var(--text-primary)]">{label}</span>
-          <span className="block text-[11px] text-[var(--text-secondary)]">{desc}</span>
-        </span>
+        {icon}
+        <span className="hidden sm:inline">{label}</span>
       </label>
     )
   }
   return (
-    <fieldset className="space-y-2">
-      <legend className="mb-1 text-[11px] font-medium text-[var(--text-secondary)]">
-        Visibilidad de la convocatoria
-      </legend>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {opt(false, 'Visible', 'Se muestra en Postulables.')}
-        {opt(true, 'Oculto', 'Se mueve a la sección inferior de ocultos.')}
-      </div>
-    </fieldset>
+    <div
+      role="radiogroup"
+      aria-label="Visibilidad de la convocatoria"
+      className="inline-flex shrink-0 overflow-hidden rounded-lg border border-[var(--border)]"
+    >
+      {seg(false, 'Visible', <Eye className="h-3.5 w-3.5" />)}
+      {seg(true, 'Oculto', <EyeOff className="h-3.5 w-3.5" />)}
+    </div>
   )
 }
 
-function TablaEtapas({ etapas }: { etapas: Etapa[] }) {
+function Cronograma({ etapas }: { etapas: Etapa[] }) {
   const ahora = Date.now()
   return (
-    <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead className="bg-[var(--bg-secondary)] text-[11px] text-[var(--text-secondary)]">
-          <tr>
-            <th className="px-3 py-2 font-medium">Etapa</th>
-            <th className="px-3 py-2 font-medium">Inicio</th>
-            <th className="px-3 py-2 font-medium">Fin</th>
-            <th className="px-3 py-2 font-medium">Estado</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--border)]">
-          {etapas.map((e, i) => {
-            const st = estadoEtapa(e, ahora)
-            const consulta = esEtapaConsultas(e.etapa)
-            return (
-              <tr key={i}>
-                <td className="px-3 py-2 text-[var(--text-primary)]">
-                  {e.etapa ?? '—'}
-                  {consulta && (
-                    <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                      consultas
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">{fmtFechaHora(e.fec_ini ?? null)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">{fmtFechaHora(e.fec_fin ?? null)}</td>
-                <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${ESTADO_ETAPA_CLS[st]}`}>
-                    {ESTADO_ETAPA_LABEL[st]}
+    <ol className="space-y-2">
+      {etapas.map((e, i) => {
+        const st = estadoEtapa(e, ahora)
+        const consulta = esEtapaConsultas(e.etapa)
+        return (
+          <li
+            key={i}
+            className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 text-sm font-medium leading-snug text-[var(--text-primary)]">
+                {e.etapa ?? '—'}
+                {consulta && (
+                  <span className="ml-1.5 inline-block rounded-full bg-amber-500/15 px-1.5 py-0.5 align-middle text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                    consultas
                   </span>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function TablaItems({ items }: { items: ItemCubso[] }) {
-  return (
-    <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead className="bg-[var(--bg-secondary)] text-[11px] text-[var(--text-secondary)]">
-          <tr>
-            <th className="px-3 py-2 font-medium">CUBSO</th>
-            <th className="px-3 py-2 font-medium">Ítem</th>
-            <th className="px-3 py-2 text-right font-medium">Cant.</th>
-            <th className="px-3 py-2 font-medium">Unidad</th>
-            <th className="px-3 py-2 font-medium">Distrito</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--border)]">
-          {items.map((it, i) => (
-            <tr key={i}>
-              <td className="px-3 py-2 font-mono text-xs text-[var(--text-secondary)]">{it.cod_cubso ?? '—'}</td>
-              <td className="px-3 py-2 text-[var(--text-primary)]">
-                <span className="block">{it.nom_cubso ?? it.descripcion ?? '—'}</span>
-                {it.descripcion && it.nom_cubso && (
-                  <span className="block text-[11px] text-[var(--text-secondary)]">{it.descripcion}</span>
                 )}
-              </td>
-              <td className="px-3 py-2 text-right font-mono text-xs text-[var(--text-primary)]">
-                {it.cantidad != null ? String(it.cantidad) : '—'}
-              </td>
-              <td className="px-3 py-2 text-xs text-[var(--text-secondary)]">{it.unidad ?? '—'}</td>
-              <td className="px-3 py-2 text-xs text-[var(--text-secondary)]">{it.distrito ?? '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${ESTADO_ETAPA_CLS[st]}`}>
+                {ESTADO_ETAPA_LABEL[st]}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-[var(--text-secondary)]">
+              <span className="font-mono">Inicio {fmtFechaHora(e.fec_ini ?? null)}</span>
+              <span className="font-mono">Fin {fmtFechaHora(e.fec_fin ?? null)}</span>
+            </div>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
@@ -184,14 +141,17 @@ export default function ContratoDetallePanel({
 }) {
   const c = contrato
   const etapas = Array.isArray(c.etapas_json) ? c.etapas_json : []
-  const items = Array.isArray(c.items_json) ? c.items_json : []
   const conDetalle = c.detalle_cargado === true
 
   return (
     <Modal open onClose={onClose} title="Detalle del contrato" wide>
       <div className="space-y-5 text-[var(--text-primary)]">
-        {/* Encabezado */}
-        <div className="space-y-2">
+        {/* Encabezado: título + control de visibilidad arriba a la derecha */}
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="min-w-0 text-base font-medium leading-snug">{tituloContrato(c)}</h2>
+            <SegmentedVisibilidad oculto={oculto} onChange={onToggleOculto} />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg bg-slate-100 px-2 py-0.5 font-mono text-sm font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-100">
               {nroContrato(c)}
@@ -211,7 +171,6 @@ export default function ContratoDetallePanel({
               Ver en SEACE ↗
             </a>
           </div>
-          <h2 className="text-base font-medium leading-snug">{tituloContrato(c)}</h2>
         </div>
 
         {/* Datos generales */}
@@ -227,15 +186,6 @@ export default function ContratoDetallePanel({
           </div>
         </Seccion>
 
-        {/* Resumen */}
-        {c.descripcion && (
-          <Seccion titulo="Resumen del requerimiento">
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)]/50 p-3 text-sm leading-relaxed text-[var(--text-primary)]">
-              {c.descripcion}
-            </div>
-          </Seccion>
-        )}
-
         {/* Cronograma */}
         <Seccion titulo="Cronograma de etapas">
           {!conDetalle ? (
@@ -243,25 +193,9 @@ export default function ContratoDetallePanel({
           ) : etapas.length === 0 ? (
             <p className="text-sm text-[var(--text-secondary)]">Sin cronograma de etapas registrado.</p>
           ) : (
-            <TablaEtapas etapas={etapas} />
+            <Cronograma etapas={etapas} />
           )}
         </Seccion>
-
-        {/* Ítems */}
-        <Seccion titulo={`Ítems (${items.length})`}>
-          {!conDetalle ? (
-            <p className="text-sm text-[var(--text-secondary)]">Detalle aún no cargado para este contrato.</p>
-          ) : items.length === 0 ? (
-            <p className="text-sm text-[var(--text-secondary)]">Sin ítems registrados.</p>
-          ) : (
-            <TablaItems items={items} />
-          )}
-        </Seccion>
-
-        {/* Acción: visibilidad */}
-        <div className="border-t border-[var(--border)] pt-4">
-          <RadioOculto oculto={oculto} onChange={onToggleOculto} />
-        </div>
       </div>
     </Modal>
   )
