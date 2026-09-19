@@ -9,6 +9,7 @@ import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 import { labelCat, tipoEntidad } from '../lib/cats'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
+import SeguimientoContrato from '../components/SeguimientoContrato'
 
 const TIPOS = ['texto', 'tabla', 'grafica', 'tabla_grafica'] as const
 type TipoRespuesta = (typeof TIPOS)[number]
@@ -1181,6 +1182,9 @@ export default function Observabilidad() {
           />
         )}
       </section>
+
+      {/* ── Seguimiento por contrato (pipeline de IA) ─────────────────── */}
+      <SeguimientoContrato />
     </div>
   )
 }
