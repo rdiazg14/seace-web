@@ -145,6 +145,7 @@ const COMPONENTE_LABEL: Record<string, string> = {
   ocr: 'OCR',
   embedding: 'Embeddings',
   clasificar: 'Clasificación',
+  query_rewrite: 'Reescritura de query',
 }
 
 const COMPONENTE_COLOR: Record<string, string> = {
@@ -154,6 +155,7 @@ const COMPONENTE_COLOR: Record<string, string> = {
   ocr: '#F59E0B',
   embedding: '#8B5CF6',
   clasificar: '#EC4899',
+  query_rewrite: '#A3E635',
 }
 
 const RUBRO_META: Record<string, { label: string; color: string; desc: string }> = {
