@@ -24,6 +24,8 @@ import {
   type ContratoEstado,
   type KpisConversion,
   type KpisConversionRubro,
+  type KpisDashboard,
+  type KpisNegocio,
   type RubroAgg,
 } from '../lib/capaSemantica'
 import { nivelLabel } from '../lib/rutaDia'
@@ -250,6 +252,8 @@ export default function Dashboard() {
           </p>
         </div>
       </header>
+
+      <BriefDiario kpis={kpis} negocio={negocio} top={postulables.slice(0, 5)} tendencia={tendenciaAltas} />
 
       {sinUrg ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
@@ -588,6 +592,67 @@ export default function Dashboard() {
         </div>
       </section>
     </div>
+  )
+}
+
+function BriefDiario({
+  kpis,
+  negocio,
+  top,
+  tendencia,
+}: {
+  kpis: KpisDashboard
+  negocio: KpisNegocio
+  top: ContratoEstado[]
+  tendencia: number
+}) {
+  const partes: string[] = []
+  if (kpis.cierran_hoy > 0) partes.push(`cierran hoy ${kpis.cierran_hoy}`)
+  if (kpis.cierran_manana > 0) partes.push(`cierran mañana ${kpis.cierran_manana}`)
+  if (kpis.cierran_semana > 0) partes.push(`cierran en 2–7 días ${kpis.cierran_semana}`)
+  return (
+    <section className="rounded-xl border border-teal-500/30 bg-gradient-to-br from-teal-500/5 via-transparent to-emerald-500/5 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Brief del día</h2>
+        <span className="text-xs capitalize text-slate-400">{fmtFechaLarga()}</span>
+      </div>
+      <p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+        Hoy hay <strong>{kpis.total_postulables}</strong> postulables,{' '}
+        <strong>{negocio.nucleo_postulables}</strong> de rubro núcleo
+        {partes.length > 0 && <> · {partes.join(' · ')}</>}
+        {'. '}Nuevos hoy: <strong>{kpis.nuevos_hoy_postulables}</strong>. Altas IT 7d:{' '}
+        <strong>{tendencia > 0 ? '+' : ''}{tendencia}%</strong>.
+      </p>
+      {top.length > 0 && (
+        <ul className="mt-3 divide-y divide-slate-200/60 dark:divide-slate-800/60">
+          {top.map((c) => {
+            const u = cierraEn(c.fecha_fin_cotizacion)
+            return (
+              <li key={c.id} className="flex items-center gap-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={seaceUrl(c.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="line-clamp-1 text-sm font-medium hover:text-teal-600 dark:hover:text-teal-400"
+                  >
+                    {tituloContrato(c)}
+                  </a>
+                  <p className="truncate text-[11px] text-slate-500">{c.entidad}</p>
+                </div>
+                {c.categoria_it && <ItPill cat={c.categoria_it} />}
+                {c.rubro && (
+                  <span className="shrink-0 rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    {nivelLabel(c.rubro)}
+                  </span>
+                )}
+                <CierraPill label={u.label} tone={u.tone} />
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 
