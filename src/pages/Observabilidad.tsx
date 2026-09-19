@@ -96,6 +96,60 @@ const MODEL_PRECIOS: Record<string, { input: number; output: number }> = {
   'gemini-3.1-pro-preview': { input: 2, output: 12 },
 }
 
+/** Respuesta de fn_uso_ia_stats(): traza unificada de consumo por componente. */
+interface UsoIaStats {
+  dias: number
+  desde: string
+  total: {
+    llamadas: number
+    tokens_prompt: number
+    tokens_completion: number
+    tokens_cached: number
+    tokens_thoughts: number
+    tokens_total: number
+    costo_usd: number
+  }
+  por_dia: Array<{
+    dia: string
+    llamadas: number
+    tokens_total: number
+    costo_usd: number
+  }>
+  por_componente: Array<{
+    componente: string
+    llamadas: number
+    tokens_prompt: number
+    tokens_completion: number
+    tokens_total: number
+    costo_usd: number
+  }>
+  por_modelo: Array<{
+    modelo: string
+    llamadas: number
+    tokens_prompt: number
+    tokens_completion: number
+    tokens_thoughts: number
+    tokens_total: number
+    costo_usd: number
+  }>
+  por_usuario: Array<{
+    user_id: string
+    email: string
+    llamadas: number
+    tokens_total: number
+    costo_usd: number
+  }>
+}
+
+const COMPONENTE_LABEL: Record<string, string> = {
+  chat: 'Chat RAG',
+  cotizar: 'Asistente de contrato',
+  analizar: 'Análisis de contrato',
+  ocr: 'OCR (pipeline)',
+  embedding: 'Embeddings (pipeline)',
+  clasificar: 'Clasificación (pipeline)',
+}
+
 function costoUsdEstimado(prompt: number, completion: number, model?: string): number {
   const p = MODEL_PRECIOS[model ?? ''] ?? MODEL_PRECIOS['gemini-3.1-flash-lite']
   return (prompt / 1_000_000) * p.input + (completion / 1_000_000) * p.output
@@ -243,6 +297,11 @@ export default function Observabilidad() {
   const [tokensErr, setTokensErr] = useState<string | null>(null)
   const [tokensLoading, setTokensLoading] = useState(true)
 
+  const [uso, setUso] = useState<UsoIaStats | null>(null)
+  const [usoErr, setUsoErr] = useState<string | null>(null)
+  const [usoLoading, setUsoLoading] = useState(true)
+  const [usoDias, setUsoDias] = useState(30)
+
   async function loadStats() {
     setStatsLoading(true)
     setStatsErr(null)
@@ -365,6 +424,20 @@ export default function Observabilidad() {
     setTokensLoading(false)
   }
 
+  async function loadUso() {
+    setUsoLoading(true)
+    setUsoErr(null)
+    const { data, error } = await supabase.rpc('fn_uso_ia_stats', { dias: usoDias })
+    if (error) {
+      setUsoErr(error.message)
+      setUso(null)
+      setUsoLoading(false)
+      return
+    }
+    setUso((data ?? null) as UsoIaStats | null)
+    setUsoLoading(false)
+  }
+
   useEffect(() => {
     void loadStats()
     void loadTipos()
@@ -374,6 +447,11 @@ export default function Observabilidad() {
     // session.access_token basta; no re-fetch en cada render del objeto session
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token])
+
+  useEffect(() => {
+    void loadUso()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.access_token, usoDias])
 
   const lastErr = stats?.kv.pipeline_trigger_last_error ?? null
   const lastOk = stats?.kv.pipeline_trigger_last_ok ?? null
@@ -432,6 +510,170 @@ export default function Observabilidad() {
           </Link>
         </p>
       </div>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium">Consumo de IA (traza unificada)</h2>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500">Ventana</span>
+            {[7, 30, 90].map((d) => (
+              <button
+                key={d}
+                onClick={() => setUsoDias(d)}
+                className={
+                  usoDias === d
+                    ? 'rounded-lg bg-teal-600 px-2.5 py-1 font-medium text-white'
+                    : 'rounded-lg border border-slate-300 px-2.5 py-1 dark:border-slate-700'
+                }
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-sm text-slate-500">
+          Tokens reales (usageMetadata) y costo estimado de todos los componentes:
+          chat, cotizar, analizar, OCR, embeddings y clasificación. Costo calculado con
+          la tarifa por modelo (input + output + razonamiento).
+        </p>
+        {usoErr && <ErrorBox retry={() => void loadUso()}>{usoErr}</ErrorBox>}
+        {usoLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : !uso ? (
+          usoErr ? null : (
+            <EmptyState title="Sin datos" hint="No hay filas en uso_ia todavía." />
+          )
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Llamadas ({usoDias} días)</p>
+                <p className="mt-2 text-2xl tabular-nums">{fmtNum(uso.total.llamadas)}</p>
+                <p className="mt-1 text-xs text-slate-500">desde {uso.desde}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Tokens totales</p>
+                <p className="mt-2 text-2xl tabular-nums">{fmtNum(uso.total.tokens_total)}</p>
+                <p className="mt-1 text-xs text-slate-500 tabular-nums">
+                  prompt {fmtNum(uso.total.tokens_prompt)} · completion {fmtNum(uso.total.tokens_completion)} ·{' '}
+                  thoughts {fmtNum(uso.total.tokens_thoughts)} · cached {fmtNum(uso.total.tokens_cached)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Costo estimado</p>
+                <p className="mt-2 text-2xl tabular-nums">{fmtUsd(uso.total.costo_usd)}</p>
+                <p className="mt-1 text-xs text-slate-500">USD · Gemini prepago</p>
+              </div>
+            </div>
+
+            {uso.por_dia.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="mb-1 text-xs text-slate-500">Costo USD por día</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={uso.por_dia}>
+                    <CartesianGrid stroke={grid} vertical={false} />
+                    <XAxis dataKey="dia" tick={{ fill: axis, fontSize: 10 }} />
+                    <YAxis tick={{ fill: axis, fontSize: 10 }} width={44} />
+                    <Tooltip
+                      contentStyle={{ background: tipBg, border: '1px solid #334155', color: tipFg }}
+                      formatter={(v) => fmtUsd(Number(v))}
+                    />
+                    <Bar dataKey="costo_usd" fill="#14B8A6" radius={[3, 3, 0, 0]} name="Costo USD" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {uso.por_componente.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[36rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Componente</th>
+                      <th className="px-3 py-2 text-right font-medium">Llamadas</th>
+                      <th className="px-3 py-2 text-right font-medium">Prompt</th>
+                      <th className="px-3 py-2 text-right font-medium">Completion</th>
+                      <th className="px-3 py-2 text-right font-medium">Total</th>
+                      <th className="px-3 py-2 text-right font-medium">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uso.por_componente.map((c) => (
+                      <tr key={c.componente} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-3 py-2 font-medium">
+                          {COMPONENTE_LABEL[c.componente] ?? c.componente}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(c.llamadas)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(c.tokens_prompt)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(c.tokens_completion)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(c.tokens_total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtUsd(c.costo_usd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {uso.por_modelo.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[40rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Modelo</th>
+                      <th className="px-3 py-2 text-right font-medium">Llamadas</th>
+                      <th className="px-3 py-2 text-right font-medium">Prompt</th>
+                      <th className="px-3 py-2 text-right font-medium">Completion</th>
+                      <th className="px-3 py-2 text-right font-medium">Thoughts</th>
+                      <th className="px-3 py-2 text-right font-medium">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uso.por_modelo.map((m) => (
+                      <tr key={m.modelo} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-3 py-2 font-mono text-xs">{m.modelo}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.llamadas)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_prompt)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_completion)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_thoughts)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtUsd(m.costo_usd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {uso.por_usuario.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[28rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Usuario</th>
+                      <th className="px-3 py-2 text-right font-medium">Llamadas</th>
+                      <th className="px-3 py-2 text-right font-medium">Tokens</th>
+                      <th className="px-3 py-2 text-right font-medium">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uso.por_usuario.map((u) => (
+                      <tr key={u.user_id} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-3 py-2">
+                          <span className="block">{u.email}</span>
+                          <span className="block font-mono text-xs text-slate-500">{u.user_id}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(u.llamadas)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(u.tokens_total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtUsd(u.costo_usd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Pipeline trigger</h2>
