@@ -5,8 +5,8 @@ import { useTheme } from '../lib/theme'
 import { useAuth } from '../lib/auth'
 
 const LINKS = [
-  { to: '/ruta-dia', label: 'Diario', end: false },
-  { to: '/', label: 'Dashboard', end: true },
+  { to: '/', label: 'Diario', end: true },
+  { to: '/dashboard', label: 'Dashboard', end: false },
   { to: '/buscar', label: 'Buscador', end: false },
   { to: '/chat', label: 'Chat', end: false },
   { to: '/docs', label: 'API', end: false },

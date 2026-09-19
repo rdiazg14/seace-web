@@ -437,7 +437,7 @@ export default function AnalisisContrato() {
     >
     <div className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4 text-[var(--text-primary)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link to="/ruta-dia" className="text-xs font-medium text-teal-600 dark:text-teal-400">
+        <Link to="/" className="text-xs font-medium text-teal-600 dark:text-teal-400">
           ← Diario
         </Link>
         {ficha && (

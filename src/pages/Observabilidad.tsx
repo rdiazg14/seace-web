@@ -65,6 +65,52 @@ interface AdminStats {
 
 const TRIGGER_STALE_MS = 36 * 60 * 60 * 1000
 
+/** Agregado de tokens de Gemini que devuelve fn_chat_tokens_stats() (solo admin). */
+interface ChatTokensStats {
+  hoy: {
+    fecha: string
+    mensajes_bot: number
+    tokens_prompt: number
+    tokens_completion: number
+  }
+  total: {
+    mensajes_bot: number
+    tokens_prompt: number
+    tokens_completion: number
+  }
+  por_modelo: Array<{
+    modelo: string
+    mensajes: number
+    tokens_prompt: number
+    tokens_completion: number
+    tokens_total: number
+  }>
+}
+
+// Precio USD por 1M tokens (input, output). Debe coincidir con el Worker y con
+// AnalisisContrato.tsx (MODEL_PRECIOS).
+const MODEL_PRECIOS: Record<string, { input: number; output: number }> = {
+  'gemini-3.7-flash': { input: 0.75, output: 3.75 },
+  'gemini-3.6-flash': { input: 0.75, output: 3.75 },
+  'gemini-3.1-flash-lite': { input: 0.25, output: 1.5 },
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
+}
+
+function costoUsdEstimado(prompt: number, completion: number, model?: string): number {
+  const p = MODEL_PRECIOS[model ?? ''] ?? MODEL_PRECIOS['gemini-3.1-flash-lite']
+  return (prompt / 1_000_000) * p.input + (completion / 1_000_000) * p.output
+}
+
+function fmtUsd(n: number): string {
+  if (n <= 0) return '$0.00'
+  if (n < 0.01) return '<$0.01'
+  return `$${n.toFixed(3).replace(/\.?0+$/, '')}`
+}
+
+function fmtNum(n: number): string {
+  return n.toLocaleString('es-PE')
+}
+
 function since14dIso(): string {
   return new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
 }
@@ -193,6 +239,10 @@ export default function Observabilidad() {
   const [sinIntentoErr, setSinIntentoErr] = useState<string | null>(null)
   const [sinIntentoLoading, setSinIntentoLoading] = useState(true)
 
+  const [tokens, setTokens] = useState<ChatTokensStats | null>(null)
+  const [tokensErr, setTokensErr] = useState<string | null>(null)
+  const [tokensLoading, setTokensLoading] = useState(true)
+
   async function loadStats() {
     setStatsLoading(true)
     setStatsErr(null)
@@ -301,11 +351,26 @@ export default function Observabilidad() {
     }
   }
 
+  async function loadTokens() {
+    setTokensLoading(true)
+    setTokensErr(null)
+    const { data, error } = await supabase.rpc('fn_chat_tokens_stats')
+    if (error) {
+      setTokensErr(error.message)
+      setTokens(null)
+      setTokensLoading(false)
+      return
+    }
+    setTokens((data ?? null) as ChatTokensStats | null)
+    setTokensLoading(false)
+  }
+
   useEffect(() => {
     void loadStats()
     void loadTipos()
     void loadCubso()
     void loadSinIntento()
+    void loadTokens()
     // session.access_token basta; no re-fetch en cada render del objeto session
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token])
@@ -362,7 +427,7 @@ export default function Observabilidad() {
           Solo lectura · cupos y caché en UTC · sin llamadas a Gemini.
         </p>
         <p className="mt-2 text-sm">
-          <Link to="/" className="font-medium text-teal-600 hover:underline dark:text-teal-400">
+          <Link to="/dashboard" className="font-medium text-teal-600 hover:underline dark:text-teal-400">
             KPIs de conversión y negocio → Dashboard
           </Link>
         </p>
@@ -531,6 +596,77 @@ export default function Observabilidad() {
             items={cubso.items}
             cargado={cubso.cargado_utc}
           />
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Tokens Gemini (chat)</h2>
+        <p className="text-sm text-slate-500">
+          Agregado real de <span className="font-mono text-xs">chat_mensajes</span> (usageMetadata).
+          Hoy = día UTC. Costo estimado con la tarifa por modelo.
+        </p>
+        {tokensErr && <ErrorBox retry={() => void loadTokens()}>{tokensErr}</ErrorBox>}
+        {tokensLoading ? (
+          <Skeleton className="h-28 w-full" />
+        ) : !tokens ? (
+          tokensErr ? null : (
+            <EmptyState title="Sin datos" hint="No se pudo leer fn_chat_tokens_stats." />
+          )
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Hoy · {tokens.hoy.fecha}</p>
+                <p className="mt-2 tabular-nums">
+                  {fmtNum(tokens.hoy.mensajes_bot)} mensajes bot ·{' '}
+                  {fmtNum(tokens.hoy.tokens_prompt + tokens.hoy.tokens_completion)} tokens
+                </p>
+                <p className="mt-1 text-xs text-slate-500 tabular-nums">
+                  prompt {fmtNum(tokens.hoy.tokens_prompt)} · completion {fmtNum(tokens.hoy.tokens_completion)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
+                <p className="font-medium">Acumulado</p>
+                <p className="mt-2 tabular-nums">
+                  {fmtNum(tokens.total.mensajes_bot)} mensajes bot ·{' '}
+                  {fmtNum(tokens.total.tokens_prompt + tokens.total.tokens_completion)} tokens
+                </p>
+                <p className="mt-1 text-xs text-slate-500 tabular-nums">
+                  prompt {fmtNum(tokens.total.tokens_prompt)} · completion {fmtNum(tokens.total.tokens_completion)}
+                </p>
+              </div>
+            </div>
+            {tokens.por_modelo.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[34rem] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Modelo</th>
+                      <th className="px-3 py-2 text-right font-medium">Mensajes</th>
+                      <th className="px-3 py-2 text-right font-medium">Prompt</th>
+                      <th className="px-3 py-2 text-right font-medium">Completion</th>
+                      <th className="px-3 py-2 text-right font-medium">Total</th>
+                      <th className="px-3 py-2 text-right font-medium">Costo est.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tokens.por_modelo.map((m) => (
+                      <tr key={m.modelo} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-3 py-2 font-mono text-xs">{m.modelo}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.mensajes)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_prompt)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_completion)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(m.tokens_total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {fmtUsd(costoUsdEstimado(m.tokens_prompt, m.tokens_completion, m.modelo))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </section>
 

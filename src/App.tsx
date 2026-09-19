@@ -23,8 +23,9 @@ function Shell() {
       {!login && <Navbar />}
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="/ruta-dia" element={<RequireAuth><RutaDia /></RequireAuth>} />
+        <Route path="/" element={<RequireAuth><RutaDia /></RequireAuth>} />
+        <Route path="/ruta-dia" element={<Navigate to="/" replace />} />
+        <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/analisis/:id" element={<RequireAuth><AnalisisContrato /></RequireAuth>} />
         <Route path="/buscar" element={<RequireAuth><Buscador /></RequireAuth>} />
         <Route path="/chat" element={<RequireAuth><Chat /></RequireAuth>} />
