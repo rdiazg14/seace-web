@@ -320,7 +320,7 @@ export default function RutaDia() {
       <header>
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h1 className="text-xl text-[var(--text-primary)] sm:text-2xl">Ruta del día</h1>
+            <h1 className="text-xl text-[var(--text-primary)] sm:text-2xl">Diario</h1>
             <p className="text-sm text-[var(--text-secondary)]">
               Oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
