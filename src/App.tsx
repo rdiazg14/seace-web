@@ -14,15 +14,17 @@ import Keywords from './pages/Keywords'
 import RutaDia from './pages/RutaDia'
 import AnalisisContrato from './pages/AnalisisContrato'
 import CambiarClave from './pages/CambiarClave'
+import RecuperarClave from './pages/RecuperarClave'
 
 function Shell() {
   const { pathname } = useLocation()
-  const login = pathname === '/login'
+  const login = pathname === '/login' || pathname === '/recuperar-clave'
   return (
     <div className="min-h-dvh bg-[var(--bg-primary)] text-[var(--text-primary)]">
       {!login && <Navbar />}
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/recuperar-clave" element={<RecuperarClave />} />
         <Route path="/" element={<RequireAuth><RutaDia /></RequireAuth>} />
         <Route path="/ruta-dia" element={<Navigate to="/" replace />} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />

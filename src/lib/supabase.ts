@@ -10,6 +10,8 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    // Procesa tokens/códigos de recuperación y confirmación de email en la URL.
+    // Requerido para el flujo «Olvidé mi clave» (/recuperar-clave).
+    detectSessionInUrl: true,
   },
 })
