@@ -1,6 +1,6 @@
 /**
  * Scoring «Ruta del día» (ENERTRONIC).
- * Fuente: docs/CRITERIOS_DECISION_ENERTRONIC.md
+ * Reglas mantenidas: workspace compartido docs/PRODUCTO.md.
  *
  * Con analisis_contrato (payload.analisis):
  *   rubro 28 + califica 18 + margen% 18 + modalidad 8 + pago 8
