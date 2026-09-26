@@ -10,7 +10,7 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
-        accent: '#14B8A6',
+        accent: 'var(--accent)',
       },
     },
   },
