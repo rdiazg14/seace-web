@@ -20,9 +20,9 @@
  * Overlay cliente: telemetría/SCADA/OT/IoT → Núcleo;
  * integración / automatización / digital twin → Adyacente. Nunca degrada.
  */
-import type { Contrato, Etapa } from '../types'
-import type { Califica, CodigoVeredicto, Modalidad, RubroAnalisis, TonoCond } from './analisis'
-import { cierraEn, cierraHoyInstante, dayOf, diffDays, limaDateISO, parseIso } from './format'
+import type { Contrato, Etapa } from '../../types'
+import type { Califica, CodigoVeredicto, Modalidad, RubroAnalisis, TonoCond } from '../../lib/analisis'
+import { addCalendarDays, cierraEn, cierraHoyInstante, dayOf, diffDays, limaDateISO, parseIso } from '../../lib/format'
 
 /**
  * Umbral de negocio (soles): por debajo el margen no paga el esfuerzo de postular.
@@ -718,4 +718,55 @@ export function ordenarPostulables(items: Oportunidad[], ahora = new Date()): Op
     || b.score.total - a.score.total
     || a.contrato.id - b.contrato.id,
   )
+}
+
+export interface ResumenDiario {
+  nuevosHoy: number
+  cierranHoy: number
+  cierranManana: number
+  cierranSemana: number
+  nucleo: number
+  nucleoIa: number
+  nucleoCloud: number
+  nucleoDev: number
+  nucleoTel: number
+  consultasAbiertas: number
+}
+
+/** KPIs del encabezado del Diario sobre el ranking puntuado. */
+export function resumenDiario(scored: Oportunidad[], ahora = new Date()): ResumenDiario {
+  const today = limaDateISO(ahora)
+  const tomorrow = addCalendarDays(today, 1)
+  const weekEnd = addCalendarDays(today, 7)
+  const vigentes = scored.filter(o => o.postulable)
+  const nuevosHoy = vigentes.filter(o => dayOf(o.contrato.fecha_publica) === today).length
+  let cierranHoy = 0
+  let cierranManana = 0
+  let cierranSemana = 0
+  let nucleo = 0
+  let nucleoIa = 0
+  let nucleoCloud = 0
+  let nucleoDev = 0
+  let nucleoTel = 0
+  let consultasAbiertas = 0
+  for (const o of vigentes) {
+    if (estadoConsultas(o.contrato.etapas_json, ahora).abierta) consultasAbiertas += 1
+    if (o.nivel === 'nucleo') {
+      nucleo += 1
+      if (o.overlay === 'telemetria') nucleoTel += 1
+      if (o.contrato.categoria_it === 'IA/analytics') nucleoIa += 1
+      if (o.contrato.categoria_it === 'Cloud/hosting') nucleoCloud += 1
+      if (o.contrato.categoria_it === 'Desarrollo software') nucleoDev += 1
+    }
+    const fin = o.contrato.fecha_fin_cotizacion
+    if (!fin) continue
+    if (cierraHoyInstante(fin, ahora)) cierranHoy += 1
+    else {
+      const d = dayOf(fin)
+      if (!d) continue
+      if (d === tomorrow) cierranManana += 1
+      else if (d <= weekEnd && d > today) cierranSemana += 1
+    }
+  }
+  return { nuevosHoy, cierranHoy, cierranManana, cierranSemana, nucleo, nucleoIa, nucleoCloud, nucleoDev, nucleoTel, consultasAbiertas }
 }

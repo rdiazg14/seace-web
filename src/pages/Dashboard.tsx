@@ -10,7 +10,7 @@ import {
 import { IT_CHIPS, labelCat } from '../lib/cats'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import { CierraPill, EstadoPill, ItPill, ObjetoPill } from '../components/Pills'
-import { nivelLabel } from '../lib/rutaDia'
+import { nivelLabel } from '../features/rutadia/model'
 import { useDashboard, PIE_COLORS, LINE_COLORS, RUBRO_COLORS } from '../lib/dashboard'
 import {
   BriefDiario,

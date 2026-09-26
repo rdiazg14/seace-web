@@ -3,7 +3,7 @@ import type { Contrato, Etapa } from '../types'
 import { Modal } from './Modal'
 import { EstadoPill } from './Pills'
 import { fmtFecha, fmtFechaHora, nroContrato, parseIso, seaceUrl, tituloContrato } from '../lib/format'
-import { esEtapaConsultas } from '../lib/rutaDia'
+import { esEtapaConsultas } from '../features/rutadia/model'
 
 type EstadoEtapa = 'abierta' | 'futura' | 'cerrada' | 'sin'
 

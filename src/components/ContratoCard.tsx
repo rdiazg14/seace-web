@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, itemsDe, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
-import { esPorAbrir, esPostulable } from '../lib/rutaDia'
+import { esPorAbrir, esPostulable } from '../features/rutadia/model'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
 import { BotonVerTdr, BTN_SEACE_SECUNDARIO } from './BotonVerTdr'
 

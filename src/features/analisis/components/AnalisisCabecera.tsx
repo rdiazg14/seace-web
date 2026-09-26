@@ -5,7 +5,7 @@ import { BotonVerTdr, BTN_SEACE_SECUNDARIO } from '../../../components/BotonVerT
 import { CatItIaPill, CierraPill, EstadoPill } from '../../../components/Pills'
 import type { AnalisisResponse } from '../../../lib/analisis'
 import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../../../lib/format'
-import { esPorAbrir } from '../../../lib/rutaDia'
+import { esPorAbrir } from '../../rutadia/model'
 import type { Contrato } from '../../../types'
 
 export function AnalisisCabecera({

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { seaceUrl, tituloContrato, cierraEn, fmtFechaLarga } from '../lib/format'
 import { ItPill, CierraPill } from './Pills'
-import { nivelLabel } from '../lib/rutaDia'
+import { nivelLabel } from '../features/rutadia/model'
 import {
   fmtTasa,
   RUBRO_LABEL,

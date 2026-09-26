@@ -23,7 +23,7 @@ import {
   RUTA_DIA_BASE_COLS,
   RUTA_DIA_COLS,
   type NivelRubro,
-} from './rutaDia'
+} from '../features/rutadia/model'
 
 const IT_OR = 'categoria_it.not.is.null,relevancia_ia.not.is.null'
 
