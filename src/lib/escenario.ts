@@ -7,6 +7,7 @@
 import type { EscenarioPayload, ChatTabla, ChatGrafica } from './analisis'
 import { escenarioMuestraCifras } from './analisis'
 import type { MensajeChat } from './chatSesiones'
+import { eventosSse } from './sse'
 
 export const CHIPS_ESCENARIO = [
   'instancias más chicas',
@@ -215,34 +216,18 @@ export const ANALISIS_PHASES: { id: NonNullable<EscenaMsg['phase']>; label: stri
   { id: 'redactar', label: 'Redactando respuesta...' },
 ]
 
+/** Eventos de /cotizar; un error del manejador no interrumpe la lectura (contrato histórico). */
 export async function readSseEvents(
   res: Response,
   onEvent: (ev: CotizarSseEvent) => void,
 ): Promise<void> {
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error('sin stream')
-  const decoder = new TextDecoder()
-  let buf = ''
-  const consume = (block: string) => {
-    const line = block.split('\n').find(l => l.startsWith('data:'))
-    if (!line) return
-    const payload = line.slice(5).trim()
-    if (!payload || payload === '[DONE]') return
+  for await (const ev of eventosSse(res, { flushTail: true })) {
     try {
-      onEvent(JSON.parse(payload) as CotizarSseEvent)
+      onEvent(ev as CotizarSseEvent)
     } catch {
       /* chunk parcial */
     }
   }
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const parts = buf.split('\n\n')
-    buf = parts.pop() ?? ''
-    for (const part of parts) consume(part)
-  }
-  if (buf.trim()) consume(buf)
 }
 
 export function buildEscenaHistory(messages: EscenaMsg[]): { role: 'user' | 'bot'; text: string }[] {
