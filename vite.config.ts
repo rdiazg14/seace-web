@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { copyFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -17,4 +17,8 @@ function spaFallback404() {
 export default defineConfig({
   plugins: [react(), spaFallback404()],
   base: '/',
+  test: {
+    // Requerido para que @testing-library/react registre cleanup automático.
+    globals: true,
+  },
 })
