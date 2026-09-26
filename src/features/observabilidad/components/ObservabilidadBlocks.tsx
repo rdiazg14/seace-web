@@ -5,7 +5,7 @@ import {
   diasDesde,
   fmtDate,
   fmtTs,
-} from '../lib/observabilidad'
+} from '../model'
 
 export function CubsoCard({
   version,

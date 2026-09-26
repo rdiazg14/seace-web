@@ -6,9 +6,9 @@ import {
 import { labelCat, tipoEntidad } from '../lib/cats'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import SeguimientoContrato from '../features/seguimiento/components/SeguimientoContrato'
-import { CubsoCard, RubroChip, ComponenteChip } from '../components/ObservabilidadBlocks'
+import { CubsoCard, RubroChip, ComponenteChip } from '../features/observabilidad/components/ObservabilidadBlocks'
+import { useObservabilidad } from '../features/observabilidad/useObservabilidad'
 import {
-  useObservabilidad,
   COMPONENTE_LABEL,
   RUBRO_META,
   TIPO_LABEL,
@@ -19,7 +19,7 @@ import {
   isoDiasAtras,
   localIso,
   type TipoRespuesta,
-} from '../lib/observabilidad'
+} from '../features/observabilidad/model'
 
 export default function Observabilidad() {
   const {
