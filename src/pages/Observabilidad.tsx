@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { labelCat, tipoEntidad } from '../lib/cats'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
-import SeguimientoContrato from '../components/SeguimientoContrato'
+import SeguimientoContrato from '../features/seguimiento/components/SeguimientoContrato'
 import { CubsoCard, RubroChip, ComponenteChip } from '../components/ObservabilidadBlocks'
 import {
   useObservabilidad,
