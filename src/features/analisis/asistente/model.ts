@@ -1,13 +1,11 @@
-// Lógica pura del chat de escenarios/cotización (sin JSX ni hooks).
-// Extraída de pages/AnalisisContrato.tsx para separar datos/parseo/precios de la
-// presentación y hacerla testeable. Los subcomponentes de UI (AnalizandoBlock,
-// ChatMedia, Razonamiento, RespuestaStats, EscenarioCard) y ChatEscenarios
-// siguen en la página e importan de aquí.
+// Lógica pura del asistente de escenarios/cotización (sin JSX ni hooks):
+// datos, parseo SSE, interpretación de respuestas de /cotizar, precios y
+// persistencia. El hook useAsistente la compone y components/ la presenta.
 
-import type { EscenarioPayload, ChatTabla, ChatGrafica } from './analisis'
-import { escenarioMuestraCifras } from './analisis'
-import type { MensajeChat } from './chatSesiones'
-import { eventosSse } from './sse'
+import type { EscenarioPayload, ChatTabla, ChatGrafica } from '../../../lib/analisis'
+import { escenarioMuestraCifras } from '../../../lib/analisis'
+import type { MensajeChat } from '../../../lib/chatSesiones'
+import { eventosSse } from '../../../lib/sse'
 
 export const CHIPS_ESCENARIO = [
   'instancias más chicas',
@@ -273,4 +271,166 @@ export function hydrateEscenario(raw: unknown): EscenarioPayload | null {
     }
   }
   return e
+}
+
+/** Respuesta JSON de /cotizar (éxito, límite, sin análisis o fallo por capa). */
+export type CotizarJson = {
+  escenario?: EscenarioPayload
+  clasificacion?: unknown
+  status?: string
+  mensaje?: string
+  error?: string
+  layer?: string
+  respuesta?: string
+  usage?: UsoTokens | null
+  thought?: string | null
+  model?: string
+  meta?: GeminiMeta | null
+  models?: string[]
+  request_id?: string
+  web_sources?: WebSource[]
+  consumido_usd?: number
+  presupuesto_usd?: number | null
+  saldo_usd?: number | null
+}
+
+/** Mensaje del bot con el escenario final (JSON o evento `data`). */
+export function escenarioListo(prev: EscenaMsg, p: CotizarJson | CotizarSseEvent, e: EscenarioPayload): EscenaMsg {
+  return {
+    ...prev,
+    streaming: false,
+    progress: true,
+    text: botHistoryText(e),
+    escenario: e,
+    clasificacion: parseClasificacion(p.clasificacion),
+    streamText: e.escenario,
+    streamBuffer: undefined,
+    usage: p.usage ?? null,
+    thought: p.thought ?? null,
+    model: p.model,
+    meta: p.meta ?? null,
+    requestId: p.request_id,
+    webSources: p.web_sources ?? [],
+  }
+}
+
+/** Mensaje del bot para un fallo controlado (sin escenario ni streaming). */
+export function falloBot(prev: EscenaMsg, text: string, extra: Partial<EscenaMsg> = {}): EscenaMsg {
+  return {
+    ...prev,
+    role: 'bot',
+    text,
+    streaming: false,
+    progress: false,
+    streamText: '',
+    streamBuffer: undefined,
+    escenario: null,
+    ...extra,
+  }
+}
+
+export type ResultadoCotizarJson =
+  | { kind: 'fallo'; text: string; extra: Partial<EscenaMsg> }
+  | { kind: 'ok'; escenario: EscenarioPayload }
+  | { kind: 'excepcion'; message: string }
+
+/** Interpreta una respuesta JSON de /cotizar (no SSE o no exitosa). */
+export function interpretarCotizarJson(status: number, ok: boolean, payload: CotizarJson, query: string): ResultadoCotizarJson {
+  if (status === 502) {
+    const capa = payload.layer === 'gemini'
+      ? 'El servicio de IA (Gemini) no respondió correctamente.'
+      : payload.layer === 'supabase'
+        ? 'No se pudo leer el análisis desde la base de datos.'
+        : 'El servicio no respondió correctamente.'
+    return { kind: 'fallo', text: `${capa} Podés reintentar la misma pregunta.`, extra: { type: 'error', error: true, query } }
+  }
+  if (status === 409 && payload.status === 'sin_analisis') {
+    return {
+      kind: 'fallo',
+      text: payload.mensaje || 'Analizá el contrato primero. Recargá esta página y esperá a que termine el análisis.',
+      extra: { aviso: true },
+    }
+  }
+  if (status === 429 || status === 503
+    || payload.error === 'rate_limited'
+    || payload.error === 'daily_limited'
+    || payload.error === 'over_capacity') {
+    return {
+      kind: 'fallo',
+      text: payload.respuesta || payload.mensaje
+        || (status === 503
+          ? 'Hay alta demanda en el asistente. Intenta más tarde.'
+          : 'Has hecho demasiadas consultas. Espera un minuto e intenta de nuevo.'),
+      extra: { limit: true },
+    }
+  }
+  if (!ok || !payload.escenario) {
+    return { kind: 'excepcion', message: payload.respuesta || payload.error || `HTTP ${status}` }
+  }
+  return { kind: 'ok', escenario: hydrateEscenario(payload.escenario) ?? payload.escenario }
+}
+
+/** Texto visible para un evento `error` del stream de /cotizar. */
+export function mensajeErrorStream(message?: string): string {
+  return message && /gemini|HTTP 5\d\d/i.test(message)
+    ? 'El servicio no respondió correctamente. Podés reintentar la misma pregunta.'
+    : (message || 'No pude recalcular el escenario')
+}
+
+/** Mueve el texto retenido al texto visible (revelado diferido del primer bloque). */
+export function revelarBuffer(prev: EscenaMsg): EscenaMsg {
+  if (!prev.streamBuffer) return prev
+  return { ...prev, streamText: (prev.streamText || '') + prev.streamBuffer, streamBuffer: undefined }
+}
+
+export interface EfectoEvento {
+  msg: EscenaMsg
+  /** El primer texto se retiene y se revela tras STREAM_REVEAL_MS. */
+  programarRevelado: boolean
+  /** Evento `data`: cancelar el revelado pendiente y aplicar metadatos globales. */
+  datos: CotizarSseEvent | null
+  error: string | null
+}
+
+/** Aplica un evento SSE de /cotizar al mensaje del bot en curso. */
+export function aplicarEventoCotizar(prev: EscenaMsg, ev: CotizarSseEvent): EfectoEvento {
+  const base: EfectoEvento = { msg: prev, programarRevelado: false, datos: null, error: null }
+  if (ev.type === 'phase') {
+    const phase = ev.phase === 'contexto' || ev.phase === 'redactar' || ev.phase === 'clasificar'
+      ? ev.phase
+      : 'clasificar'
+    return { ...base, msg: { ...prev, phase } }
+  }
+  if (ev.type === 'thought' && ev.token) {
+    return { ...base, msg: { ...prev, thought: (prev.thought || '') + ev.token, thoughtStreaming: true } }
+  }
+  if (ev.type === 'thought_done') {
+    return { ...base, msg: { ...prev, thoughtStreaming: false } }
+  }
+  if (ev.type === 'text' && ev.token) {
+    if (!prev.streamText) {
+      return { ...base, programarRevelado: true, msg: { ...prev, streamBuffer: (prev.streamBuffer || '') + ev.token } }
+    }
+    return { ...base, msg: { ...prev, streamText: (prev.streamText || '') + ev.token } }
+  }
+  if (ev.type === 'data' && ev.escenario) {
+    const e = hydrateEscenario(ev.escenario) ?? ev.escenario
+    return { ...base, datos: ev, msg: escenarioListo(revelarBuffer(prev), ev, e) }
+  }
+  if (ev.type === 'error') return { ...base, error: mensajeErrorStream(ev.message) }
+  return base
+}
+
+/** Tokens acumulados de la sesión (mensajes previos + respuesta nueva) para chat_sesiones. */
+export function tokensSesion(previos: EscenaMsg[], nuevo: EscenaMsg): { prompt: number; completion: number } {
+  const acu = { prompt: 0, completion: 0 }
+  for (const m of previos) {
+    if (m.role === 'bot' && m.usage) {
+      acu.prompt += m.usage.prompt
+      acu.completion += m.usage.completion
+    }
+  }
+  acu.prompt += nuevo.usage?.prompt ?? 0
+  acu.completion += nuevo.usage?.completion ?? 0
+  return acu
 }

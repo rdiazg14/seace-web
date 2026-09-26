@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { EscenarioPayload } from './analisis'
-import type { MensajeChat } from './chatSesiones'
+import type { EscenarioPayload } from '../../../lib/analisis'
+import type { MensajeChat } from '../../../lib/chatSesiones'
 import {
   botHistoryText,
   buildEscenaHistory,
@@ -18,7 +18,7 @@ import {
   usoTokensTotal,
   type CotizarSseEvent,
   type EscenaMsg,
-} from './escenario'
+} from './model'
 
 function sseResponse(chunks: string[]): Response {
   const enc = new TextEncoder()
