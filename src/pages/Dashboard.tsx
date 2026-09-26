@@ -11,7 +11,7 @@ import { IT_CHIPS, labelCat } from '../lib/cats'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import { CierraPill, EstadoPill, ItPill, ObjetoPill } from '../components/Pills'
 import { nivelLabel } from '../features/rutadia/model'
-import { useDashboard, PIE_COLORS, LINE_COLORS, RUBRO_COLORS } from '../lib/dashboard'
+import { useDashboard, PIE_COLORS, LINE_COLORS, RUBRO_COLORS } from '../features/dashboard/useDashboard'
 import {
   BriefDiario,
   ConversionBlock,
@@ -19,7 +19,7 @@ import {
   Kpi,
   Spark,
   UrgCard,
-} from '../components/DashboardBlocks'
+} from '../features/dashboard/components/DashboardBlocks'
 
 export default function Dashboard() {
   const {

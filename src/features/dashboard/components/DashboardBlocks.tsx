@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { seaceUrl, tituloContrato, cierraEn, fmtFechaLarga } from '../lib/format'
-import { ItPill, CierraPill } from './Pills'
-import { nivelLabel } from '../features/rutadia/model'
+import { seaceUrl, tituloContrato, cierraEn, fmtFechaLarga } from '../../../lib/format'
+import { ItPill, CierraPill } from '../../../components/Pills'
+import { nivelLabel } from '../../rutadia/model'
 import {
   fmtTasa,
   RUBRO_LABEL,
@@ -10,7 +10,7 @@ import {
   type KpisConversionRubro,
   type KpisDashboard,
   type KpisNegocio,
-} from '../lib/capaSemantica'
+} from '../model'
 
 export function BriefDiario({
   kpis,

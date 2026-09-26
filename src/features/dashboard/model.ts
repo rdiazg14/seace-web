@@ -8,24 +8,19 @@
  * (v_contratos_estado / v_kpis_*, B22). Día Lima solo en tramos de cierre.
  * Rubro = clasificarNivel() ≡ fn_rubro_energetic en capa_semantica.sql
  */
-import { supabase } from './supabase'
-import type { Contrato } from '../types'
+import type { Contrato } from '../../types'
 import {
   addCalendarDays,
   cierraHoyInstante,
   dayOf,
   limaDateISO,
-} from './format'
+} from '../../lib/format'
 import {
   clasificarNivel,
   esPorAbrir,
   esPostulable,
-  RUTA_DIA_BASE_COLS,
-  RUTA_DIA_COLS,
   type NivelRubro,
-} from '../features/rutadia/model'
-
-const IT_OR = 'categoria_it.not.is.null,relevancia_ia.not.is.null'
+} from '../rutadia/model'
 
 export type RubroAgg = 'nucleo' | 'adyacente' | 'oportunista' | 'marginal' | 'sin_clasificar'
 
@@ -107,24 +102,22 @@ export interface KpisConversionRubro extends KpisConversion {
   rubro: RubroAgg
 }
 
-const ESTADO_COLS = `${RUTA_DIA_BASE_COLS.join(',')},es_postulable,es_vigente_ventana_vencida,es_en_evaluacion,cierra_hoy,cierra_manana,cierra_semana,cierra_7d,es_nuevo_hoy,rubro`
-
-function asRecord(v: unknown): Record<string, unknown> | null {
+export function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null
 }
 
-function asRecordList(v: unknown): Record<string, unknown>[] {
+export function asRecordList(v: unknown): Record<string, unknown>[] {
   if (!Array.isArray(v)) return []
   return v.filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object' && !Array.isArray(x))
 }
 
-function asInt(v: unknown): number {
+export function asInt(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
 }
 
 /** Tasa 0..1. null/NaN → null (no convertir a 0: 0% mentiría “fallé”). */
-function asRate(v: unknown): number | null {
+export function asRate(v: unknown): number | null {
   if (v == null || v === '') return null
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : null
@@ -137,7 +130,7 @@ export function fmtTasa(v: number | null): string {
   return `${pct.toLocaleString('es-PE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })}%`
 }
 
-function asLineas(raw: unknown): LineaAgg[] {
+export function asLineas(raw: unknown): LineaAgg[] {
   if (!Array.isArray(raw)) return []
   return raw
     .map((x) => {
@@ -147,7 +140,7 @@ function asLineas(raw: unknown): LineaAgg[] {
     .filter((x) => x.linea && x.total > 0)
 }
 
-function asRubros(raw: unknown): RubroAggRow[] {
+export function asRubros(raw: unknown): RubroAggRow[] {
   if (!Array.isArray(raw)) return []
   const ok: RubroAgg[] = ['nucleo', 'adyacente', 'oportunista', 'marginal', 'sin_clasificar']
   return raw
@@ -159,7 +152,7 @@ function asRubros(raw: unknown): RubroAggRow[] {
     .filter((x) => x.total > 0)
 }
 
-function marcar(c: Contrato, ahora = new Date()): ContratoEstado {
+export function marcar(c: Contrato, ahora = new Date()): ContratoEstado {
   const today = limaDateISO(ahora)
   const d = dayOf(c.fecha_fin_cotizacion)
   const pub = dayOf(c.fecha_publica)
@@ -180,7 +173,7 @@ function marcar(c: Contrato, ahora = new Date()): ContratoEstado {
   }
 }
 
-function aggLinea(rows: ContratoEstado[]): LineaAgg[] {
+export function aggLinea(rows: ContratoEstado[]): LineaAgg[] {
   const map = new Map<string, number>()
   for (const r of rows) {
     if (!r.es_postulable) continue
@@ -190,7 +183,7 @@ function aggLinea(rows: ContratoEstado[]): LineaAgg[] {
   return [...map.entries()].map(([linea, total]) => ({ linea, total })).sort((a, b) => b.total - a.total)
 }
 
-function aggRubro(rows: ContratoEstado[]): RubroAggRow[] {
+export function aggRubro(rows: ContratoEstado[]): RubroAggRow[] {
   const map = new Map<RubroAgg, number>()
   for (const r of rows) {
     if (!r.es_postulable) continue
@@ -201,7 +194,7 @@ function aggRubro(rows: ContratoEstado[]): RubroAggRow[] {
   return order.filter((k) => (map.get(k) ?? 0) > 0).map((rubro) => ({ rubro, total: map.get(rubro) ?? 0 }))
 }
 
-function kpisDe(rows: ContratoEstado[], extra: { en_evaluacion: number; altas_it_7d: number; altas_it_7d_prev: number }): {
+export function kpisDe(rows: ContratoEstado[], extra: { en_evaluacion: number; altas_it_7d: number; altas_it_7d_prev: number }): {
   kpis: KpisDashboard
   negocio: KpisNegocio
 } {
@@ -236,7 +229,7 @@ function kpisDe(rows: ContratoEstado[], extra: { en_evaluacion: number; altas_it
   return { kpis, negocio }
 }
 
-function parseEstadoRow(raw: Record<string, unknown>): ContratoEstado {
+export function parseEstadoRow(raw: Record<string, unknown>): ContratoEstado {
   const c = raw as unknown as Contrato
   const rubro = clasificarNivel(c).nivel
   return {
@@ -253,7 +246,7 @@ function parseEstadoRow(raw: Record<string, unknown>): ContratoEstado {
   }
 }
 
-function parseKpis(row: Record<string, unknown>): KpisDashboard {
+export function parseKpis(row: Record<string, unknown>): KpisDashboard {
   return {
     total_postulables: asInt(row.total_postulables),
     cierran_hoy: asInt(row.cierran_hoy),
@@ -269,7 +262,7 @@ function parseKpis(row: Record<string, unknown>): KpisDashboard {
   }
 }
 
-function parseConversionCounts(row: Record<string, unknown>): KpisConversion {
+export function parseConversionCounts(row: Record<string, unknown>): KpisConversion {
   return {
     rankeados_30d: asInt(row.rankeados_30d),
     postulables_30d: asInt(row.postulables_30d),
@@ -286,9 +279,9 @@ function parseConversionCounts(row: Record<string, unknown>): KpisConversion {
   }
 }
 
-const RUBRO_ORDEN: RubroAgg[] = ['nucleo', 'adyacente', 'oportunista', 'marginal', 'sin_clasificar']
+export const RUBRO_ORDEN: RubroAgg[] = ['nucleo', 'adyacente', 'oportunista', 'marginal', 'sin_clasificar']
 
-function parseConversionRubro(row: Record<string, unknown>): KpisConversionRubro {
+export function parseConversionRubro(row: Record<string, unknown>): KpisConversionRubro {
   const rubroRaw = String(row.rubro ?? 'sin_clasificar') as RubroAgg
   return {
     rubro: RUBRO_ORDEN.includes(rubroRaw) ? rubroRaw : 'sin_clasificar',
@@ -296,7 +289,7 @@ function parseConversionRubro(row: Record<string, unknown>): KpisConversionRubro
   }
 }
 
-function parseNegocio(row: Record<string, unknown>): KpisNegocio {
+export function parseNegocio(row: Record<string, unknown>): KpisNegocio {
   return {
     nucleo_postulables: asInt(row.nucleo_postulables),
     adyacente_postulables: asInt(row.adyacente_postulables),
@@ -308,134 +301,6 @@ function parseNegocio(row: Record<string, unknown>): KpisNegocio {
     nucleo_tel: asInt(row.nucleo_tel),
     por_linea: asLineas(row.por_linea),
     por_rubro: asRubros(row.por_rubro),
-  }
-}
-
-async function countIt(filters: { gtePub?: string; ltPub?: string; estado?: string }): Promise<number> {
-  let q = supabase.from('v_contratos').select('id', { count: 'exact', head: true }).or(IT_OR)
-  if (filters.estado) q = q.eq('estado', filters.estado)
-  if (filters.gtePub) q = q.gte('fecha_publica', filters.gtePub)
-  if (filters.ltPub) q = q.lt('fecha_publica', filters.ltPub)
-  const { count, error } = await q
-  if (error) throw error
-  return count ?? 0
-}
-
-/** Inicio del día Lima como timestamptz (Perú sin DST, UTC-5). */
-function limaDayStartIso(isoDate: string): string {
-  return `${isoDate}T00:00:00-05:00`
-}
-
-async function fetchCapaSql(): Promise<CapaSemantica | null> {
-  const [kpisRes, negRes, postRes, cerrRes] = await Promise.all([
-    supabase.from('v_kpis_dashboard').select('*').limit(1),
-    supabase.from('v_kpis_negocio').select('*').limit(1),
-    supabase.from('v_contratos_estado').select(ESTADO_COLS)
-      .eq('es_postulable', true)
-      .order('fecha_fin_cotizacion', { ascending: true, nullsFirst: false })
-      .limit(800),
-    supabase.from('v_contratos_estado').select(ESTADO_COLS)
-      .or('es_en_evaluacion.eq.true,es_vigente_ventana_vencida.eq.true')
-      .order('fecha_fin_cotizacion', { ascending: false, nullsFirst: false })
-      .limit(800),
-  ])
-  if (kpisRes.error || !kpisRes.data?.[0]) return null
-  if (negRes.error || postRes.error) return null
-  const kpisRow = asRecord(kpisRes.data[0])
-  if (!kpisRow) return null
-  const kpis = parseKpis(kpisRow)
-  const negRow = asRecord(negRes.data?.[0])
-  const negocio = negRow
-    ? parseNegocio(negRow)
-    : {
-        nucleo_postulables: 0,
-        adyacente_postulables: 0,
-        oportunista_postulables: 0,
-        marginal_postulables: 0,
-        nucleo_ia: 0,
-        nucleo_cloud: 0,
-        nucleo_dev: 0,
-        nucleo_tel: 0,
-        por_linea: kpis.por_linea,
-        por_rubro: kpis.por_rubro,
-      }
-  return {
-    fuente: 'sql',
-    kpis,
-    negocio,
-    postulables: asRecordList(postRes.data).map(parseEstadoRow),
-    cerrados: cerrRes.error ? [] : asRecordList(cerrRes.data).map(parseEstadoRow),
-  }
-}
-
-async function fetchCapaTs(): Promise<CapaSemantica> {
-  const today = limaDateISO()
-  const d7 = addCalendarDays(today, -6)
-  const d14 = addCalendarDays(today, -13)
-  const [vig, evalRows, enEval, altas7, altasPrev] = await Promise.all([
-    supabase.from('v_contratos').select(RUTA_DIA_COLS)
-      .eq('estado', 'Vigente').or(IT_OR)
-      .order('fecha_fin_cotizacion', { ascending: true, nullsFirst: false })
-      .limit(800),
-    supabase.from('v_contratos').select(RUTA_DIA_COLS)
-      .eq('estado', 'En Evaluación').or(IT_OR)
-      .order('fecha_fin_cotizacion', { ascending: false, nullsFirst: false })
-      .limit(800),
-    countIt({ estado: 'En Evaluación' }),
-    countIt({ gtePub: limaDayStartIso(d7) }),
-    countIt({ gtePub: limaDayStartIso(d14), ltPub: limaDayStartIso(d7) }),
-  ])
-  if (vig.error) throw vig.error
-  const vigentes = asRecordList(vig.data) as unknown as Contrato[]
-  const evaluacion = evalRows.error ? [] : asRecordList(evalRows.data) as unknown as Contrato[]
-  const markedVig = vigentes.map((c) => marcar(c))
-  const markedEval = evaluacion.map((c) => marcar(c))
-  const { kpis, negocio } = kpisDe(markedVig, {
-    en_evaluacion: enEval,
-    altas_it_7d: altas7,
-    altas_it_7d_prev: altasPrev,
-  })
-  return {
-    fuente: 'ts',
-    kpis,
-    negocio,
-    postulables: markedVig.filter((r) => r.es_postulable),
-    cerrados: [
-      ...markedEval,
-      ...markedVig.filter((r) => r.es_vigente_ventana_vencida),
-    ],
-  }
-}
-
-export async function cargarCapaSemantica(): Promise<CapaSemantica> {
-  try {
-    const sql = await fetchCapaSql()
-    if (sql) return sql
-  } catch {
-    /* vistas no aplicadas aún */
-  }
-  return fetchCapaTs()
-}
-
-/** Funnel 30d. Falla suave: null si las vistas no existen o el fetch falla. */
-export async function cargarKpisConversion(): Promise<{
-  global: KpisConversion
-  rubros: KpisConversionRubro[]
-} | null> {
-  try {
-    const [gRes, rRes] = await Promise.all([
-      supabase.from('v_kpis_conversion').select('*').limit(1),
-      supabase.from('v_kpis_conversion_rubro').select('*'),
-    ])
-    if (gRes.error || !gRes.data?.[0]) return null
-    const row = asRecord(gRes.data[0])
-    if (!row) return null
-    const rubros = asRecordList(rRes.error ? [] : rRes.data)
-      .map(parseConversionRubro)
-      .sort((a, b) => RUBRO_ORDEN.indexOf(a.rubro) - RUBRO_ORDEN.indexOf(b.rubro))
-    return { global: parseConversionCounts(row), rubros }
-  } catch {
-    return null
   }
 }
 

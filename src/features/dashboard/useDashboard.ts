@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from './supabase'
-import type { Contrato, DashboardResumen } from '../types'
-import { labelCat, tipoEntidad } from './cats'
-import { useTheme } from './theme'
-import { cierraEn } from './format'
+import { supabase } from '../../lib/supabase'
+import type { Contrato, DashboardResumen } from '../../types'
+import { labelCat, tipoEntidad } from '../../lib/cats'
+import { useTheme } from '../../lib/theme'
+import { cierraEn } from '../../lib/format'
 import {
   cargarCapaSemantica,
   cargarKpisConversion,
+} from './api'
+import {
   RUBRO_LABEL,
   tendenciaPct,
   type CapaSemantica,
@@ -14,7 +16,7 @@ import {
   type KpisConversion,
   type KpisConversionRubro,
   type RubroAgg,
-} from './capaSemantica'
+} from './model'
 
 export const PIE_COLORS = ['#14B8A6', '#6366f1', '#f59e0b', '#ef4444']
 export const LINE_COLORS = ['#14B8A6', '#8b5cf6', '#f59e0b', '#3b82f6', '#ef4444']
