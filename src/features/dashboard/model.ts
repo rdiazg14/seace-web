@@ -8,9 +8,11 @@
  * (v_contratos_estado / v_kpis_*, B22). Día Lima solo en tramos de cierre.
  * Rubro = clasificarNivel() ≡ fn_rubro_energetic en capa_semantica.sql
  */
-import type { Contrato } from '../../types'
+import type { Contrato, DashboardResumen } from '../../types'
+import { labelCat, tipoEntidad } from '../../lib/cats'
 import {
   addCalendarDays,
+  cierraEn,
   cierraHoyInstante,
   dayOf,
   limaDateISO,
@@ -315,4 +317,114 @@ export const RUBRO_LABEL: Record<RubroAgg, string> = {
   oportunista: 'Oportunista',
   marginal: 'Marginal',
   sin_clasificar: 'Sin clasificar',
+}
+
+export const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+export type UrgFilter = 'todos' | 'hoy' | 'semana' | 'mes'
+export type VistaLista = 'postulable' | 'cerrados'
+
+export function barrasCategorias(kpis: KpisDashboard | undefined): Array<LineaAgg & { id: string; label: string }> {
+  return (kpis?.por_linea ?? [])
+    .map((r) => ({ ...r, id: r.linea, label: labelCat(r.linea) || r.linea }))
+    .slice(0, 6)
+}
+
+export function lineasParaGrafica(lineas: LineaAgg[]) {
+  return lineas.map((linea) => ({
+    name: labelCat(linea.linea) || linea.linea,
+    value: linea.total,
+  }))
+}
+
+export function resumenPorMes(resumen: DashboardResumen[]) {
+  const map = new Array<number>(12).fill(0)
+  for (const r of resumen) {
+    const mes = new Date(r.mes).getUTCMonth()
+    if (!Number.isNaN(mes)) map[mes] += r.total
+  }
+  return map.map((total, i) => ({ mes: MESES[i], total }))
+}
+
+export function resumenPorObjeto(resumen: DashboardResumen[]) {
+  const map = new Map<string, number>()
+  for (const r of resumen) map.set(r.objeto || '—', (map.get(r.objeto || '—') ?? 0) + r.total)
+  const filas = [...map.entries()].map(([name, value]) => ({ name, value }))
+  const total = filas.reduce((sum, fila) => sum + fila.value, 0) || 1
+  return filas.map((fila) => ({ ...fila, pct: Math.round((fila.value / total) * 100) }))
+}
+
+export function topEntidades(postulables: ContratoEstado[]) {
+  const map = new Map<string, number>()
+  for (const contrato of postulables) {
+    const entidad = contrato.entidad || '—'
+    map.set(entidad, (map.get(entidad) ?? 0) + 1)
+  }
+  return [...map.entries()]
+    .map(([name, total]) => ({ name: name.slice(0, 42), total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10)
+}
+
+export function contratosPorTipoEntidad(postulables: ContratoEstado[]) {
+  const map = new Map<string, number>()
+  for (const contrato of postulables) {
+    const tipo = tipoEntidad(contrato.entidad)
+    map.set(tipo, (map.get(tipo) ?? 0) + 1)
+  }
+  return [...map.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total)
+}
+
+export function seriesPorCategoria(resumen: DashboardResumen[], categorias: string[]) {
+  const rows = MESES.map((mes) => {
+    const row: Record<string, string | number> = { mes }
+    for (const categoria of categorias) row[categoria] = 0
+    return row
+  })
+  for (const r of resumen) {
+    if (!r.categoria_it || !categorias.includes(r.categoria_it)) continue
+    const mes = new Date(r.mes).getUTCMonth()
+    if (!Number.isNaN(mes)) rows[mes][r.categoria_it] = Number(rows[mes][r.categoria_it] ?? 0) + r.total
+  }
+  return rows
+}
+
+export function comparacionCategorias(
+  categorias: Array<LineaAgg & { id: string; label: string }>,
+  resumen: DashboardResumen[],
+  series: Array<Record<string, string | number>>,
+  ahora = new Date(),
+) {
+  const mesActual = ahora.getUTCMonth()
+  const mesAnterior = mesActual === 0 ? 11 : mesActual - 1
+  return categorias.map((categoria) => {
+    let actual = 0
+    let anterior = 0
+    for (const r of resumen) {
+      if (r.categoria_it !== categoria.id) continue
+      const mes = new Date(r.mes).getUTCMonth()
+      if (mes === mesActual) actual += r.total
+      if (mes === mesAnterior) anterior += r.total
+    }
+    const pct = anterior === 0 ? (actual > 0 ? 100 : 0) : Math.round(((actual - anterior) / anterior) * 100)
+    return { ...categoria, cur: actual, ant: anterior, pct, spark: series.map((row) => Number(row[categoria.id] ?? 0)) }
+  })
+}
+
+export function filtrarOportunidades(
+  contratos: ContratoEstado[],
+  filtros: { categoria: string | null; urgencia: UrgFilter; vista: VistaLista },
+) {
+  return contratos.filter((contrato) => {
+    if (filtros.categoria && contrato.categoria_it !== filtros.categoria) return false
+    if (filtros.vista === 'cerrados') return true
+    if (filtros.urgencia === 'hoy') return contrato.cierra_hoy || contrato.cierra_manana
+    if (filtros.urgencia === 'semana') return contrato.cierra_7d
+    if (filtros.urgencia === 'mes') {
+      const cierre = cierraEn(contrato.fecha_fin_cotizacion)
+      return cierre.days != null && cierre.days >= 0 && cierre.days <= 30
+    }
+    return true
+  })
 }

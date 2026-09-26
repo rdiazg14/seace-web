@@ -3,14 +3,22 @@ import type { Contrato } from '../../types'
 import {
   asInt,
   asRate,
+  barrasCategorias,
+  comparacionCategorias,
+  contratosPorTipoEntidad,
+  filtrarOportunidades,
   fmtTasa,
   kpisDe,
   marcar,
   parseConversionCounts,
   parseEstadoRow,
   parseKpis,
+  resumenPorMes,
+  resumenPorObjeto,
   RUBRO_LABEL,
+  seriesPorCategoria,
   tendenciaPct,
+  topEntidades,
 } from './model'
 
 /** Viernes 26/09/2026 15:00 Lima (UTC−5). */
@@ -152,5 +160,52 @@ describe('parseo defensivo de filas SQL', () => {
     expect(r.es_postulable).toBe(true)
     expect(r.cierra_hoy).toBe(false)
     expect(r.rubro).toBe('nucleo')
+  })
+})
+
+describe('derivaciones de presentación del Dashboard', () => {
+  const postulables = [
+    marcar(mkContrato({ id: 1, entidad: 'Ministerio A', fecha_fin_cotizacion: '2026-09-26T20:00:00-05:00' }), AHORA),
+    marcar(mkContrato({ id: 2, entidad: 'Ministerio A', categoria_it: 'Cloud/hosting', fecha_fin_cotizacion: '2026-09-27T20:00:00-05:00' }), AHORA),
+    marcar(mkContrato({ id: 3, entidad: 'Municipalidad B', categoria_it: 'Hardware', fecha_fin_cotizacion: '2026-10-10T20:00:00-05:00' }), AHORA),
+  ]
+
+  it('agrupa meses, objetos y series por categoría sin mutar la entrada', () => {
+    const resumen = [
+      { objeto: 'Servicio', estado: 'Vigente', categoria_it: 'IA/analytics', mes: '2026-08-01', total: 2 },
+      { objeto: 'Servicio', estado: 'Vigente', categoria_it: 'IA/analytics', mes: '2026-09-01', total: 3 },
+      { objeto: 'Bien', estado: 'Vigente', categoria_it: 'Hardware', mes: '2026-09-01', total: 1 },
+    ]
+    expect(resumenPorMes(resumen)[8]).toEqual({ mes: 'Sep', total: 4 })
+    expect(resumenPorObjeto(resumen)).toEqual([
+      { name: 'Servicio', value: 5, pct: 83 },
+      { name: 'Bien', value: 1, pct: 17 },
+    ])
+    const series = seriesPorCategoria(resumen, ['IA/analytics'])
+    expect(series[7]['IA/analytics']).toBe(2)
+    expect(series[8]['IA/analytics']).toBe(3)
+  })
+
+  it('calcula comparación mensual con reloj inyectado', () => {
+    const categorias = [{ linea: 'IA/analytics', id: 'IA/analytics', label: 'IA', total: 3 }]
+    const resumen = [
+      { objeto: 'Servicio', estado: 'Vigente', categoria_it: 'IA/analytics', mes: '2026-08-01', total: 2 },
+      { objeto: 'Servicio', estado: 'Vigente', categoria_it: 'IA/analytics', mes: '2026-09-01', total: 3 },
+    ]
+    const series = seriesPorCategoria(resumen, ['IA/analytics'])
+    expect(comparacionCategorias(categorias, resumen, series, AHORA)[0]).toMatchObject({ cur: 3, ant: 2, pct: 50 })
+  })
+
+  it('filtra la lista por categoría, urgencia y vista', () => {
+    expect(filtrarOportunidades(postulables, { categoria: 'IA/analytics', urgencia: 'hoy', vista: 'postulable' }).map((r) => r.id)).toEqual([1])
+    expect(filtrarOportunidades(postulables, { categoria: null, urgencia: 'semana', vista: 'postulable' }).map((r) => r.id)).toEqual([1, 2])
+    expect(filtrarOportunidades(postulables, { categoria: null, urgencia: 'todos', vista: 'cerrados' })).toHaveLength(3)
+  })
+
+  it('deriva barras, entidades y tipos desde contratos', () => {
+    const kpis = { ...kpisDe(postulables, { en_evaluacion: 0, altas_it_7d: 0, altas_it_7d_prev: 0 }).kpis }
+    expect(barrasCategorias(kpis)[0]).toMatchObject({ id: 'IA/analytics', total: 1 })
+    expect(topEntidades(postulables)[0]).toEqual({ name: 'Ministerio A', total: 2 })
+    expect(contratosPorTipoEntidad(postulables).reduce((sum, r) => sum + r.total, 0)).toBe(3)
   })
 })

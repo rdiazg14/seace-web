@@ -4,8 +4,7 @@ import { cierraEn, seaceUrl, tituloContrato } from '../../../lib/format'
 import { nivelLabel } from '../../rutadia/model'
 import { EmptyState } from '../../../components/ui'
 import { CierraPill, ItPill, ObjetoPill } from '../../../components/Pills'
-import type { ContratoEstado } from '../model'
-import type { UrgFilter, VistaLista } from '../useDashboard'
+import type { ContratoEstado, UrgFilter, VistaLista } from '../model'
 
 export function TabOportunidades({
   vista,

@@ -5,7 +5,7 @@
  * vistas aún no están aplicadas.
  */
 import { supabase } from '../../lib/supabase'
-import type { Contrato } from '../../types'
+import type { Contrato, DashboardResumen } from '../../types'
 import {
   addCalendarDays,
   limaDateISO,
@@ -156,5 +156,26 @@ export async function cargarKpisConversion(): Promise<{
     return { global: parseConversionCounts(row), rubros }
   } catch {
     return null
+  }
+}
+
+export interface DashboardBaseData {
+  resumen: DashboardResumen[]
+  recientes: Contrato[]
+  ultima: string | null
+}
+
+/** Consultas auxiliares del Dashboard; conserva los fallos suaves históricos. */
+export async function cargarDashboardBase(): Promise<DashboardBaseData> {
+  const [resumenRes, recientesRes, ultimaRes] = await Promise.all([
+    supabase.from('dashboard_resumen').select('*'),
+    supabase.from('v_contratos').select('*').order('fecha_publica', { ascending: false }).limit(10),
+    supabase.from('v_contratos').select('fecha_publica').order('fecha_publica', { ascending: false }).limit(1),
+  ])
+  if (resumenRes.error) throw new Error(resumenRes.error.message)
+  return {
+    resumen: (resumenRes.data ?? []) as DashboardResumen[],
+    recientes: recientesRes.error ? [] : (recientesRes.data ?? []) as Contrato[],
+    ultima: ultimaRes.error ? null : ultimaRes.data?.[0]?.fecha_publica ?? null,
   }
 }
