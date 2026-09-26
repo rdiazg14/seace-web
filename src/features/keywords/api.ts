@@ -1,4 +1,5 @@
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from './supabase'
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from '../../lib/supabase'
+import type { CandidataRow, ColaRow, KeywordRow } from './model'
 
 export interface SimularResultado {
   keyword: string
@@ -82,4 +83,52 @@ export function colaRechazar(token: string, id: number) {
     token,
     { id },
   )
+}
+
+export interface KeywordsData {
+  rows: KeywordRow[]
+  cands: CandidataRow[]
+  cola: ColaRow[]
+}
+
+/** Carga keywords + conteos + candidatas + cola; devuelve el primer error encontrado. */
+export async function cargarKeywords(): Promise<{ data: KeywordsData | null; error: string | null }> {
+  const [kwRes, cntRes, candRes, colaRes] = await Promise.all([
+    supabase
+      .from('it_keywords')
+      .select('id, categoria, keyword, tipo, prioridad, limite_palabra, tolera_plural, activa, nota')
+      .order('prioridad')
+      .order('id')
+      .limit(5000),
+    supabase.rpc('admin_keyword_conteos'),
+    supabase
+      .from('keyword_candidatas')
+      .select('id, senal, categoria_propuesta, veces_vista, estado, evidencia')
+      .order('veces_vista', { ascending: false })
+      .limit(2000),
+    supabase
+      .from('clasificacion_pendiente')
+      .select('id, contrato_id, categoria_p1, categoria_p2, origen, votos, estado, nota, titulo')
+      .in('estado', ['pendiente', 'observacion'])
+      .order('estado')
+      .order('contrato_id', { ascending: false })
+      .limit(500),
+  ])
+  const primerError = kwRes.error ?? cntRes.error ?? candRes.error ?? colaRes.error
+  if (primerError) return { data: null, error: primerError.message }
+  const counts = new Map<number, number>()
+  for (const r of (cntRes.data ?? []) as { keyword_id: number; n: number }[]) {
+    counts.set(Number(r.keyword_id), Number(r.n))
+  }
+  return {
+    data: {
+      rows: (kwRes.data ?? []).map((r) => ({
+        ...r,
+        etiquetas: counts.get(r.id) ?? 0,
+      })) as KeywordRow[],
+      cands: (candRes.data ?? []) as CandidataRow[],
+      cola: (colaRes.data ?? []) as ColaRow[],
+    },
+    error: null,
+  }
 }
