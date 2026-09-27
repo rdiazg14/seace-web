@@ -138,7 +138,8 @@ describe('patchEndpoint', () => {
     expect(patchEndpoint('nada', { activo: true }).ok).toBe(false)
     expect(patchEndpoint('chat', { modelo_id: 'no-uuid' }).ok).toBe(false)
     expect(patchEndpoint('chat', { hereda: 'chat' }).ok).toBe(false)
-    expect(patchEndpoint('chat', { hereda: 'cotizar' }).ok).toBe(true)
+    expect(patchEndpoint('chat', { hereda: 'cotizar' }).ok).toBe(false)
+    expect(patchEndpoint('query_rewrite', { hereda: 'chat' }).ok).toBe(true)
   })
 
   it('habilitados: array de uuid ≤8; activo booleano estricto', () => {
@@ -151,6 +152,13 @@ describe('patchEndpoint', () => {
 })
 
 describe('salida segura', () => {
+  it('rechaza credenciales anidadas y URLs con credenciales o query', () => {
+    expect(patchModelo({ params: { nested: { api_key: 'synthetic' } } }).ok).toBe(false)
+    expect(patchEndpoint('chat', { config: { Authorization: 'Bearer synthetic' } }).ok).toBe(false)
+    expect(patchProveedor({ base_url: 'https://user:pass@example.test/v1' }).ok).toBe(false)
+    expect(patchProveedor({ base_url: 'https://example.test/v1?key=synthetic' }).ok).toBe(false)
+    expect(patchProveedor({ base_url: 42 }).ok).toBe(false)
+  })
   it('sanearProveedor nunca expone clave_cifrada', () => {
     const out = sanearProveedor({ id: 'qwen', clave_cifrada: 'v1.x.y', clave_mascara: 'sk-...wxyz' })
     expect(JSON.stringify(out)).not.toContain('v1.x.y')

@@ -1,0 +1,29 @@
+name: Config IA checks
+on:
+  push:
+    paths:
+      - 'supabase/functions/**'
+      - 'tsconfig.config-ia.json'
+      - 'package*.json'
+      - '.github/workflows/config-ia.yml'
+  pull_request:
+    paths:
+      - 'supabase/functions/**'
+      - 'tsconfig.config-ia.json'
+      - 'package*.json'
+      - '.github/workflows/config-ia.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck:config-ia
+      - run: npm test
+      - run: npm run lint

@@ -39,7 +39,7 @@ function toB64(buf: ArrayBuffer | Uint8Array): string {
   return btoa(s)
 }
 
-function fromB64(b64: string): Uint8Array {
+function fromB64(b64: string): Uint8Array<ArrayBuffer> {
   const s = atob(b64.trim())
   const out = new Uint8Array(s.length)
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
@@ -96,7 +96,8 @@ function texto(body: Record<string, unknown>, k: string): string {
 
 function esUrlHttps(v: string): boolean {
   try {
-    return new URL(v).protocol === 'https:'
+    const url = new URL(v)
+    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
   } catch {
     return false
   }
@@ -154,7 +155,7 @@ export function patchProveedor(body: Record<string, unknown>): Validacion {
   }
   if ('base_url' in body) {
     const v = texto(body, 'base_url')
-    if (v && !esUrlHttps(v)) return { ok: false, mensaje: 'base_url debe ser https.' }
+    if (!v || !esUrlHttps(v)) return { ok: false, mensaje: 'base_url debe ser https.' }
     patch.base_url = v || null
   }
   if ('activo' in body) {
@@ -237,7 +238,7 @@ export function validarModelo(body: Record<string, unknown>): Validacion {
   for (const k of ['capacidades', 'params', 'precio'] as const) {
     const v = body[k]
     if (v === undefined) continue
-    if (!esObjeto(v)) return { ok: false, mensaje: `${k} debe ser objeto JSON.` }
+    if (!esObjeto(v) || contieneSecreto(v)) return { ok: false, mensaje: `${k} debe ser objeto JSON sin credenciales.` }
     datos[k] = v
   }
 
@@ -288,7 +289,7 @@ export function patchModelo(body: Record<string, unknown>): Validacion {
   }
   for (const k of ['capacidades', 'params', 'precio'] as const) {
     if (!(k in body)) continue
-    if (!esObjeto(body[k])) return { ok: false, mensaje: `${k} debe ser objeto JSON.` }
+    if (!esObjeto(body[k]) || contieneSecreto(body[k])) return { ok: false, mensaje: `${k} debe ser objeto JSON sin credenciales.` }
     patch[k] = body[k]
   }
   if ('activo' in body) {
@@ -336,16 +337,14 @@ export function patchEndpoint(endpoint: string, body: Record<string, unknown>): 
     const v = body.hereda
     if (v === null) {
       patch.hereda = null
-    } else if (!(ENDPOINTS as readonly string[]).includes(v as string)) {
+    } else if (endpoint !== 'query_rewrite' || v !== 'chat') {
       return { ok: false, mensaje: 'hereda debe ser un endpoint conocido o null.' }
-    } else if (v === endpoint) {
-      return { ok: false, mensaje: 'hereda no puede ser el propio endpoint.' }
     } else {
       patch.hereda = v
     }
   }
   if ('config' in body) {
-    if (!esObjeto(body.config)) return { ok: false, mensaje: 'config debe ser objeto JSON.' }
+    if (!esObjeto(body.config) || contieneSecreto(body.config)) return { ok: false, mensaje: 'config debe ser objeto JSON sin credenciales.' }
     patch.config = body.config
   }
   if ('activo' in body) {
@@ -368,7 +367,7 @@ export function patchEndpoint(endpoint: string, body: Record<string, unknown>): 
 export function sanearProveedor(row: Record<string, unknown>): Record<string, unknown> {
   const { clave_cifrada, ...rest } = row
   void clave_cifrada
-  return { ...rest, tiene_clave: row.clave_cifrada != null }
+  return { ...rest, tiene_clave: typeof row.tiene_clave === 'boolean' ? row.tiene_clave : row.clave_cifrada != null }
 }
 
 /** Elimina clave_cifrada (y clave si apareciera) de un objeto anidado para auditoría. */
@@ -377,7 +376,7 @@ export function sanearParaAuditoria(v: unknown): unknown {
   if (esObjeto(v)) {
     const out: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(v)) {
-      if (k === 'clave_cifrada' || k === 'clave') {
+      if (esCampoSecreto(k)) {
         out[k] = val == null ? null : '<protegida>'
       } else {
         out[k] = sanearParaAuditoria(val)
@@ -386,4 +385,13 @@ export function sanearParaAuditoria(v: unknown): unknown {
     return out
   }
   return v
+}
+
+function esCampoSecreto(k: string): boolean {
+  return /^(clave|clave_cifrada|api[_-]?key|authorization|password|secret|access_token|ia_master_key)$/i.test(k)
+}
+function contieneSecreto(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(contieneSecreto)
+  if (esObjeto(v)) return Object.entries(v).some(([k, val]) => esCampoSecreto(k) || contieneSecreto(val))
+  return false
 }

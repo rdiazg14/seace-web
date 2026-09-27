@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run typecheck:config-ia && tsc -b && vite build",
+    "typecheck:config-ia": "tsc -p tsconfig.config-ia.json",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview"
