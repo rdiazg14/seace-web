@@ -62,7 +62,7 @@ export function useAsistente(userId: string | null, contratoId: number) {
   }
 
   const totalTokens = messages.reduce((acc, m) => acc + (m.role === 'bot' ? usoTokensTotal(m.usage) : 0), 0)
-  const totalCosto = messages.reduce((acc, m) => acc + (m.role === 'bot' ? costoUsd(m.usage, m.model) : 0), 0)
+  const totalCosto = messages.reduce((acc, m) => acc + (m.role === 'bot' ? (m.costoUsd ?? costoUsd(m.usage, m.model)) : 0), 0)
 
   async function refrescarSesiones() {
     if (!userId) return

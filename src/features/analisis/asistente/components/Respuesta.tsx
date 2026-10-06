@@ -155,7 +155,7 @@ export function RespuestaStats({ m }: { m: EscenaMsg }) {
   const meta = m.meta
   if (!u && !m.model && !m.requestId && !meta) return null
   const total = usoTokensTotal(u)
-  const cost = costoUsd(u, m.model)
+  const cost = m.costoUsd ?? costoUsd(u, m.model)
 
   const copyId = async () => {
     if (!m.requestId) return

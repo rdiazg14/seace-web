@@ -6,6 +6,7 @@ import {
   buildEscenaHistory,
   cambioRelevante,
   costoUsd,
+  escenarioListo,
   fmtCostoUsd,
   fmtUsd,
   graficaValida,
@@ -108,8 +109,17 @@ describe('persistencia de mensajes del asistente', () => {
   it('payloadBot serializa el estado rico y es null para el usuario', () => {
     expect(payloadBot({ role: 'user', text: 'q' })).toBeNull()
     expect(payloadBot({ role: 'bot', text: 't', model: 'm', requestId: 'r' })).toEqual({
-      escenario: null, clasificacion: null, thought: null, model: 'm', request_id: 'r', usage: null, meta: null, web_sources: null,
+      escenario: null, clasificacion: null, thought: null, model: 'm', request_id: 'r', usage: null, costo_usd: null, meta: null, web_sources: null,
     })
+  })
+
+  it('costo_usd del proxy viaja al mensaje y regresa por la fila persistida (FIX-009)', () => {
+    const p = payloadBot({ role: 'bot', text: 't', costoUsd: 0.0042 })
+    expect(p?.costo_usd).toBe(0.0042)
+    const m = msgDesdeFila(fila({ payload: { costo_usd: 0.0042 } }))
+    expect(m.costoUsd).toBe(0.0042)
+    // Mensajes antiguos sin el campo: null → la UI cae a la tabla local.
+    expect(msgDesdeFila(fila({ payload: {} })).costoUsd).toBeNull()
   })
 
   it('msgDesdeFila reconstruye el escenario y marca progreso completo', () => {
@@ -144,8 +154,16 @@ describe('costos y formatos', () => {
     const u = { prompt: 1_000_000, completion: 0, thoughts: 1_000_000 }
     expect(costoUsd(u, 'gemini-3.7-flash')).toBeCloseTo(0.75 + 3.75)
     expect(costoUsd(u, 'desconocido')).toBeCloseTo(0.25 + 1.5)
+    expect(costoUsd(u, 'qwen3.7-flash')).toBeCloseTo(0.03 + 0.13)
     expect(costoUsd(null)).toBe(0)
     expect(usoTokensTotal({ prompt: 1, completion: 2, thoughts: 3 })).toBe(6)
+  })
+
+  it('escenarioListo prefiera el costo_usd del proxy (FIX-009)', () => {
+    const prev = { role: 'bot', text: '' } as const
+    const m = escenarioListo(prev, { escenario: escenario(), usage: { prompt: 1, completion: 2 }, costo_usd: 0.007, model: 'qwen3.7-flash' }, escenario())
+    expect(m.costoUsd).toBe(0.007)
+    expect(escenarioListo(prev, { escenario: escenario() }, escenario()).costoUsd).toBeNull()
   })
 
   it('formatea importes pequeños, cero y desconocidos', () => {

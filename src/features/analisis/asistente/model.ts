@@ -63,6 +63,8 @@ export interface EscenaMsg {
   streamBuffer?: string
   /** Tokens de la generación (prompt + completion), si el backend los devolvió. */
   usage?: UsoTokens | null
+  /** Costo USD calculado por el proxy con ia_modelos.precio (FIX-009). null = sin precio conocido; undefined = respuesta vieja sin el campo. */
+  costoUsd?: number | null
   /** Razonamiento interno del modelo (thinking), colapsado con icono de cerebro. */
   thought?: string | null
   /** True mientras el razonamiento se está revelando en vivo (SSE) y debe verse expandido. */
@@ -91,6 +93,7 @@ export type CotizarSseEvent = {
   models?: string[]
   request_id?: string
   web_sources?: WebSource[]
+  costo_usd?: number | null
   consumido_usd?: number
   presupuesto_usd?: number | null
   saldo_usd?: number | null
@@ -116,6 +119,7 @@ export function payloadBot(m: EscenaMsg): Record<string, unknown> | null {
     model: m.model ?? null,
     request_id: m.requestId ?? null,
     usage: m.usage ?? null,
+    costo_usd: m.costoUsd ?? null,
     meta: m.meta ?? null,
     web_sources: m.webSources ?? null,
   }
@@ -144,6 +148,7 @@ export function msgDesdeFila(m: MensajeChat): EscenaMsg {
     base.model = typeof p.model === 'string' ? p.model : undefined
     base.requestId = typeof p.request_id === 'string' ? p.request_id : undefined
     base.usage = (p.usage && typeof p.usage === 'object') ? p.usage as UsoTokens : null
+    base.costoUsd = typeof p.costo_usd === 'number' ? p.costo_usd : null
     base.meta = (p.meta && typeof p.meta === 'object') ? p.meta as GeminiMeta : null
     base.webSources = Array.isArray(p.web_sources) ? p.web_sources as WebSource[] : undefined
     if (escenario && !base.error && !base.limit) {
@@ -155,12 +160,15 @@ export function msgDesdeFila(m: MensajeChat): EscenaMsg {
   return base
 }
 
-// Precio USD por 1M tokens (input, output). Debe coincidir con el Worker.
+// Precio USD por 1M tokens (input, output). Solo fallback: desde FIX-009 el
+// proxy devuelve costo_usd calculado con ia_modelos.precio y esta tabla solo
+// estima mensajes antiguos sin ese campo. Debe coincidir con el Worker.
 export const MODEL_PRECIOS: Record<string, { input: number; output: number }> = {
   'gemini-3.7-flash': { input: 0.75, output: 3.75 },
   'gemini-3.6-flash': { input: 0.75, output: 3.75 },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.5 },
   'gemini-3.1-pro-preview': { input: 2, output: 12 },
+  'qwen3.7-flash': { input: 0.03, output: 0.13 },
 }
 
 export const MODEL_LABELS: Record<string, string> = {
@@ -168,6 +176,7 @@ export const MODEL_LABELS: Record<string, string> = {
   'gemini-3.6-flash': '3.6 Flash',
   'gemini-3.1-flash-lite': '3.1 Flash-Lite',
   'gemini-3.1-pro-preview': '3.1 Pro',
+  'qwen3.7-flash': 'Qwen 3.7',
 }
 
 export function labelModelo(m: string | null | undefined): string {
@@ -283,6 +292,7 @@ export type CotizarJson = {
   layer?: string
   respuesta?: string
   usage?: UsoTokens | null
+  costo_usd?: number | null
   thought?: string | null
   model?: string
   meta?: GeminiMeta | null
@@ -306,6 +316,7 @@ export function escenarioListo(prev: EscenaMsg, p: CotizarJson | CotizarSseEvent
     streamText: e.escenario,
     streamBuffer: undefined,
     usage: p.usage ?? null,
+    costoUsd: p.costo_usd ?? null,
     thought: p.thought ?? null,
     model: p.model,
     meta: p.meta ?? null,
