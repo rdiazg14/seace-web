@@ -18,6 +18,7 @@ const RutaDia = lazy(() => import('./pages/RutaDia'))
 const AnalisisContrato = lazy(() => import('./pages/AnalisisContrato'))
 const CambiarClave = lazy(() => import('./pages/CambiarClave'))
 const RecuperarClave = lazy(() => import('./pages/RecuperarClave'))
+const ConfigIa = lazy(() => import('./pages/ConfigIa'))
 
 function RouteFallback() {
   return (
@@ -49,6 +50,7 @@ function Shell() {
           <Route path="/usuarios" element={<RequireAuth admin><Usuarios /></RequireAuth>} />
           <Route path="/observabilidad" element={<RequireAuth admin><Observabilidad /></RequireAuth>} />
           <Route path="/keywords" element={<RequireAuth admin><Keywords /></RequireAuth>} />
+          <Route path="/config-ia" element={<RequireAuth admin><ConfigIa /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

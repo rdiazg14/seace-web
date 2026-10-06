@@ -54,6 +54,9 @@ export default function Navbar() {
               <NavLink to="/keywords" className={linkCls}>
                 Keywords
               </NavLink>
+              <NavLink to="/config-ia" className={linkCls}>
+                Config IA
+              </NavLink>
               <NavLink to="/usuarios" className={linkCls}>
                 Usuarios
               </NavLink>
@@ -120,6 +123,9 @@ export default function Navbar() {
               </NavLink>
               <NavLink to="/keywords" className={linkCls} onClick={() => setOpen(false)}>
                 Keywords
+              </NavLink>
+              <NavLink to="/config-ia" className={linkCls} onClick={() => setOpen(false)}>
+                Config IA
               </NavLink>
               <NavLink to="/usuarios" className={linkCls} onClick={() => setOpen(false)}>
                 Usuarios
