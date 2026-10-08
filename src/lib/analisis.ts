@@ -1,6 +1,12 @@
 export const TECHO_8_UIT_SOLES = 42800
 
-/** Debe coincidir con seace-ai-proxy ANALISIS_PROMPT_VERSION. Subir a mano si cambia el schema. */
+/**
+ * Base de schema del prompt de análisis (seace-ai-proxy ANALISIS_PROMPT_VERSION).
+ * Desde FIX-010 el Worker persiste `prompt_version` como `<base>.<identidad>`
+ * (p. ej. '1.qwen.a3815aa6'); las filas históricas llevan solo la base.
+ * Los lectores deben aceptar ambas formas (eq base o like base + '.*').
+ * Subir la base solo si cambia el schema del payload.
+ */
 export const ANALISIS_PROMPT_VERSION = '1'
 
 export type RubroAnalisis = 'nucleo' | 'adyacente' | 'oportunista' | 'marginal' | 'desconocido'

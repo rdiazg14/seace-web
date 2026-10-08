@@ -27,7 +27,9 @@ export async function leerAnalisisPersistido(contratoId: number, pdfHash: string
     .select('payload, creado_utc')
     .eq('contrato_id', contratoId)
     .eq('pdf_hash', pdfHash)
-    .eq('prompt_version', ANALISIS_PROMPT_VERSION)
+    // Desde FIX-010 el Worker guarda `<v>.<identidad>` (p. ej. '1.qwen.a3815aa6');
+    // las filas históricas llevan solo '<v>'. La base es la versión de schema.
+    .or(`prompt_version.eq.${ANALISIS_PROMPT_VERSION},prompt_version.like.${ANALISIS_PROMPT_VERSION}.*`)
     .maybeSingle()
   if (error || !data?.payload || typeof data.payload !== 'object') return null
   const payload = data.payload as AnalisisResponse
