@@ -84,4 +84,31 @@ describe('config-ia HTTP', () => {
     const audit = await handler(request('/auditoria', 'GET'))
     expect(await audit.text()).not.toContain('v1.synthetic.private')
   })
+  it('PATCH meta/modo_failover solo acepta auto|manual y muta vía RPC auditada (GW-008)', async () => {
+    const { handler, rpc } = setup()
+    const ok = await handler(request('/meta/modo_failover', 'PATCH', { valor: 'manual' }))
+    expect(ok.status).toBe(200)
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_tabla: 'ia_meta', p_id: 'modo_failover', p_operacion: 'editar', p_actor: ACTOR,
+    })
+    expect((await handler(request('/meta/modo_failover', 'PATCH', { valor: 'si' }))).status).toBe(400)
+    expect((await handler(request('/meta/version_config', 'PATCH', { valor: 'auto' }))).status).toBe(400)
+    expect(rpc).toHaveBeenCalledTimes(1) // las inválidas no tocan la RPC
+  })
+  it('GET /failover lista eventos sin exponer claves', async () => {
+    const { handler, service } = setup()
+    service.from.mockImplementation((table: string) => {
+      const data = table === 'ia_failover_eventos'
+        ? [{ endpoint: 'chat', de_proveedor: 'qwen', a_proveedor: 'gemini', ok: true }] : []
+      const result = { data, error: null }
+      return {
+        select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        then: (resolve: (v: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+      }
+    })
+    const r = await handler(request('/failover', 'GET'))
+    expect(r.status).toBe(200)
+    const body = await r.json()
+    expect(body.eventos[0].a_proveedor).toBe('gemini')
+  })
 })

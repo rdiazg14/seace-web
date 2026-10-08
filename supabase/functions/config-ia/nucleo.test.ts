@@ -3,6 +3,7 @@ import {
   descifrarClave,
   enmascararClave,
   patchEndpoint,
+  patchMeta,
   patchModelo,
   patchProveedor,
   sanearParaAuditoria,
@@ -177,5 +178,35 @@ describe('salida segura', () => {
     expect(s).not.toContain('plano')
     expect(s).toContain('<protegida>')
     expect(limpio.clave_cifrada).toBe('<protegida>')
+  })
+})
+
+describe('GW-008: saldo y meta', () => {
+  it('patchProveedor acepta saldo_inicial_usd ≥0 y fija saldo_fecha', () => {
+    const v = patchProveedor({ saldo_inicial_usd: 25.5 })
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.datos.saldo_inicial_usd).toBe(25.5)
+      expect(typeof v.datos.saldo_fecha).toBe('string')
+    }
+  })
+  it('patchProveedor limpia saldo con null (y saldo_fecha)', () => {
+    const v = patchProveedor({ saldo_inicial_usd: null })
+    expect(v.ok).toBe(true)
+    if (v.ok) {
+      expect(v.datos.saldo_inicial_usd).toBeNull()
+      expect(v.datos.saldo_fecha).toBeNull()
+    }
+  })
+  it('patchProveedor rechaza saldo inválido', () => {
+    expect(patchProveedor({ saldo_inicial_usd: -1 }).ok).toBe(false)
+    expect(patchProveedor({ saldo_inicial_usd: 'x' }).ok).toBe(false)
+  })
+  it('patchMeta solo acepta modo_failover auto|manual', () => {
+    expect(patchMeta('modo_failover', { valor: 'auto' }).ok).toBe(true)
+    expect(patchMeta('modo_failover', { valor: 'manual' }).ok).toBe(true)
+    expect(patchMeta('modo_failover', { valor: 'x' }).ok).toBe(false)
+    expect(patchMeta('version_config', { valor: 'auto' }).ok).toBe(false)
+    expect(patchMeta('corpus_embeddings', { valor: 'auto' }).ok).toBe(false)
   })
 })

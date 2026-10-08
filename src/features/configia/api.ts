@@ -9,6 +9,11 @@ export interface Proveedor {
   notas: string | null
   clave_mascara: string | null
   tiene_clave: boolean
+  /** GW-008: saldo inicial declarado y estimado desde uso_ia (no es el saldo real del proveedor). */
+  saldo_inicial_usd: number | null
+  saldo_fecha: string | null
+  consumo_usd: number | null
+  saldo_estimado_usd: number | null
   updated_at: string | null
 }
 
@@ -48,6 +53,26 @@ export interface Cambio {
   entidad: string
   antes: Record<string, unknown> | null
   despues: Record<string, unknown> | null
+  origen?: string | null
+  created_at: string
+}
+
+/** GW-008: evento de failover inter-proveedor (auditoría runtime). */
+export interface FailoverEvento {
+  id: number
+  endpoint: string
+  de_proveedor: string
+  de_modelo: string
+  a_proveedor: string
+  a_modelo: string
+  error_kind: string
+  status: number | null
+  modo: string
+  posicion: number
+  ok: boolean | null
+  dur_ms: number | null
+  request_id: string | null
+  version_config: number | null
   created_at: string
 }
 
@@ -93,6 +118,13 @@ export async function obtenerAuditoria(): Promise<Cambio[]> {
   return data?.cambios ?? []
 }
 
+/** GET /config-ia/failover — últimos eventos de failover (GW-008). */
+export async function obtenerFailovers(): Promise<FailoverEvento[]> {
+  const { data, error } = await supabase.functions.invoke<{ eventos: FailoverEvento[] }>('config-ia/failover', { method: 'GET' })
+  if (error) throw await leerError(error)
+  return data?.eventos ?? []
+}
+
 interface PatchResp {
   version_config: number
   endpoint?: Record<string, unknown>
@@ -115,4 +147,7 @@ export function patchModelo(id: string, body: Record<string, unknown>) {
 }
 export function patchProveedor(id: string, body: Record<string, unknown>) {
   return patch(`config-ia/proveedores/${id}`, body)
+}
+export function patchMeta(clave: string, valor: string) {
+  return patch(`config-ia/meta/${clave}`, { valor })
 }

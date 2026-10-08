@@ -165,13 +165,41 @@ export function patchProveedor(body: Record<string, unknown>): Validacion {
     patch.activo = body.activo
   }
   if ('notas' in body) patch.notas = texto(body, 'notas') || null
+  // GW-008: saldo inicial declarado por el admin (referencia del estimado).
+  if ('saldo_inicial_usd' in body) {
+    const v = body.saldo_inicial_usd
+    if (v === null) {
+      patch.saldo_inicial_usd = null
+      patch.saldo_fecha = null
+    } else if (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e9) {
+      patch.saldo_inicial_usd = v
+      patch.saldo_fecha = new Date().toISOString()
+    } else {
+      return { ok: false, mensaje: 'saldo_inicial_usd debe ser número ≥ 0 o null.' }
+    }
+  }
   if ('clave' in body || 'clave_cifrada' in body) {
     return { ok: false, mensaje: 'La clave se escribe solo vía POST /proveedores/:id/clave.' }
   }
   if (Object.keys(patch).length === 0) {
-    return { ok: false, mensaje: 'Nada que editar (nombre, base_url, activo, notas).' }
+    return { ok: false, mensaje: 'Nada que editar (nombre, base_url, activo, notas, saldo_inicial_usd).' }
   }
   return { ok: true, datos: patch }
+}
+
+/** GW-008: mutación de ia_meta — solo claves operativas explícitas. */
+const META_EDITABLES: Record<string, readonly string[]> = {
+  modo_failover: ['auto', 'manual'],
+}
+
+export function patchMeta(clave: string, body: Record<string, unknown>): Validacion {
+  const permitidos = META_EDITABLES[clave]
+  if (!permitidos) return { ok: false, mensaje: `meta '${clave}' no es editable por esta vía.` }
+  const v = body.valor
+  if (typeof v !== 'string' || !(permitidos as readonly string[]).includes(v)) {
+    return { ok: false, mensaje: `valor debe ser ${permitidos.join('|')}.` }
+  }
+  return { ok: true, datos: { valor: v } }
 }
 
 /** Valida la clave entrante antes de cifrarla. null = borrado explícito. */

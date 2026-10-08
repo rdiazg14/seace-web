@@ -1,7 +1,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import {
-  cifrarClave, enmascararClave, patchEndpoint, patchModelo, patchProveedor,
+  cifrarClave, enmascararClave, patchEndpoint, patchMeta, patchModelo, patchProveedor,
   sanearParaAuditoria, sanearProveedor, validarClaveEntrada, validarModelo,
   validarProveedor, type Validacion,
 } from './nucleo.ts'
@@ -62,21 +62,40 @@ export function crearHandler(deps: Dependencias) {
       if (pos < 0) return json(req, { error: 'method' }, 405)
       const route = parts.slice(pos + 1)
       if (req.method === 'GET' && route.length === 0) {
-        const [prov, mod, ep, meta] = await Promise.all([
-          service.from('ia_proveedores').select('id,nombre,tipo_api,base_url,activo,notas,clave_mascara,created_at,updated_at'),
+        const [prov, mod, ep, meta, saldo] = await Promise.all([
+          service.from('ia_proveedores').select('id,nombre,tipo_api,base_url,activo,notas,clave_mascara,saldo_inicial_usd,saldo_fecha,created_at,updated_at'),
           service.from('ia_modelos').select('*'), service.from('ia_endpoints').select('*'),
           service.from('ia_meta').select('clave,valor,updated_at'),
+          service.rpc('fn_ia_saldo'),
         ])
         if (prov.error || mod.error || ep.error || meta.error) return json(req, { error: 'read' }, 500)
+        // Saldo estimado = inicial − consumo observado en uso_ia (no es el
+        // saldo real del proveedor: solo lo que pasó por nuestra telemetría).
+        const saldos = new Map<string, Record<string, unknown>>()
+        if (!saldo.error && Array.isArray(saldo.data)) {
+          for (const s of saldo.data as Record<string, unknown>[]) {
+            saldos.set(String(s.proveedor), s)
+          }
+        }
         return json(req, {
-          proveedores: (prov.data ?? []).map(r => sanearProveedor({ ...r, tiene_clave: r.clave_mascara != null })),
+          proveedores: (prov.data ?? []).map(r => sanearProveedor({
+            ...r, tiene_clave: r.clave_mascara != null,
+            consumo_usd: saldos.get(String(r.id))?.consumo_usd ?? null,
+            saldo_estimado_usd: saldos.get(String(r.id))?.saldo_estimado_usd ?? null,
+          })),
           modelos: sanearParaAuditoria(mod.data ?? []), endpoints: sanearParaAuditoria(ep.data ?? []), meta: meta.data ?? [],
         })
       }
       if (req.method === 'GET' && route.length === 1 && route[0] === 'auditoria') {
         const { data, error } = await service.from('ia_config_cambios')
-          .select('id,user_id,accion,entidad,antes,despues,created_at').order('id', { ascending: false }).limit(100)
+          .select('id,user_id,accion,entidad,antes,despues,origen,created_at').order('id', { ascending: false }).limit(100)
         return error ? json(req, { error: 'read' }, 500) : json(req, { cambios: sanearParaAuditoria(data ?? []) })
+      }
+      if (req.method === 'GET' && route.length === 1 && route[0] === 'failover') {
+        const { data, error } = await service.from('ia_failover_eventos')
+          .select('id,endpoint,de_proveedor,de_modelo,a_proveedor,a_modelo,error_kind,status,modo,posicion,ok,dur_ms,request_id,version_config,created_at')
+          .order('id', { ascending: false }).limit(50)
+        return error ? json(req, { error: 'read' }, 500) : json(req, { eventos: data ?? [] })
       }
       let body: Record<string, unknown>
       try { body = await bodyLimitado(req) }
@@ -110,6 +129,8 @@ export function crearHandler(deps: Dependencias) {
         table = 'ia_modelos'; operation = 'borrar'; valid = { ok: true, datos: {} }
       } else if (resource === 'endpoints' && route.length === 2 && req.method === 'PATCH') {
         table = 'ia_endpoints'; operation = 'editar'; valid = patchEndpoint(id, body)
+      } else if (resource === 'meta' && route.length === 2 && req.method === 'PATCH') {
+        table = 'ia_meta'; operation = 'editar'; valid = patchMeta(id, body)
       } else return json(req, { error: 'method' }, 405)
       if (!valid.ok) return json(req, { error: 'validation', mensaje: valid.mensaje }, 400)
       const { data, error } = await service.rpc('ia_config_mutar', {
@@ -124,7 +145,8 @@ export function crearHandler(deps: Dependencias) {
       if (keyRoute) return json(req, { ok: true, proveedor: id, tiene_clave: data.registro.tiene_clave,
         clave_mascara: data.registro.clave_mascara, version_config: data.version_config })
       if (operation === 'borrar') return json(req, { ok: true, version_config: data.version_config })
-      const field = resource === 'proveedores' ? 'proveedor' : resource === 'modelos' ? 'modelo' : 'endpoint'
+      const field = resource === 'proveedores' ? 'proveedor' : resource === 'modelos' ? 'modelo'
+        : resource === 'meta' ? 'meta' : 'endpoint'
       return json(req, { [field]: sanearParaAuditoria(data.registro), version_config: data.version_config })
     } catch { return json(req, { error: 'server' }, 500) }
   }
