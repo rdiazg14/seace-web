@@ -76,6 +76,33 @@ export interface FailoverEvento {
   created_at: string
 }
 
+/** OPS-011: captura manual de consola de una plataforma de infraestructura. */
+export interface InfraSnapshot {
+  id: number
+  plataforma: string
+  capturado_at: string
+  saldo: number | null
+  presupuesto: number | null
+  consumo_periodo: number | null
+  moneda: string
+  estado_salud: string | null
+  metricas: Record<string, unknown>
+  detalle: Record<string, unknown> | null
+  fuente: string
+}
+
+export interface Plataforma {
+  id: string
+  nombre: string
+  tipo: string
+  rol: string
+  plan: string | null
+  modelo_cobro: string | null
+  moneda_nativa: string
+  notas: string | null
+  snapshot: InfraSnapshot | null
+}
+
 export interface ConfigData {
   proveedores: Proveedor[]
   modelos: Modelo[]
@@ -123,6 +150,19 @@ export async function obtenerFailovers(): Promise<FailoverEvento[]> {
   const { data, error } = await supabase.functions.invoke<{ eventos: FailoverEvento[] }>('config-ia/failover', { method: 'GET' })
   if (error) throw await leerError(error)
   return data?.eventos ?? []
+}
+
+/** GET /config-ia/infra — plataformas con su último snapshot (OPS-011). */
+export async function obtenerInfra(): Promise<Plataforma[]> {
+  const { data, error } = await supabase.functions.invoke<{ plataformas: Plataforma[] }>('config-ia/infra', { method: 'GET' })
+  if (error) throw await leerError(error)
+  return data?.plataformas ?? []
+}
+
+/** POST /config-ia/infra/:id/snapshot — registra una captura manual de consola. */
+export async function registrarSnapshot(plataforma: string, body: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.functions.invoke(`config-ia/infra/${plataforma}/snapshot`, { method: 'POST', body })
+  if (error) throw await leerError(error)
 }
 
 interface PatchResp {

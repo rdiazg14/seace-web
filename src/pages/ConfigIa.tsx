@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EmptyState, ErrorBox, Skeleton } from '../components/ui'
 import { cadenaEfectiva, modelosElegibles, resumenCambio, useConfigIa } from '../features/configia/useConfigIa'
-import type { Endpoint, Modelo, Proveedor } from '../features/configia/api'
+import type { Endpoint, Modelo, Plataforma, Proveedor } from '../features/configia/api'
 
 const TH = 'px-3 py-2 font-medium'
 const TD = 'px-3 py-2'
@@ -116,12 +116,76 @@ function SaldoProveedor({ p, busy, onSave }: { p: Proveedor; busy: boolean; onSa
   )
 }
 
+const SALUD_BADGE: Record<string, string> = {
+  healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  degraded: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  unhealthy: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+}
+
+function fmtMonto(v: number | null | undefined, moneda: string): string {
+  if (v == null) return '—'
+  return `${moneda} ${v.toFixed(2)}`
+}
+
+/** OPS-011: formulario inline para registrar una captura manual de consola. */
+function CapturaInfra({ p, busy, onSave }: {
+  p: Plataforma
+  busy: boolean
+  onSave: (body: Record<string, unknown>) => void
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [saldo, setSaldo] = useState('')
+  const [presupuesto, setPresupuesto] = useState('')
+  const [consumo, setConsumo] = useState('')
+  const [salud, setSalud] = useState('healthy')
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)}
+        className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+        + captura
+      </button>
+    )
+  }
+  const num = (s: string) => (s.trim() === '' ? null : Number(s))
+  return (
+    <div className="flex flex-wrap items-center gap-1 text-xs">
+      <input aria-label={`saldo ${p.id}`} value={saldo} onChange={e => setSaldo(e.target.value)}
+        placeholder="saldo" inputMode="decimal"
+        className="w-20 rounded border border-slate-300 bg-transparent px-1 py-0.5 font-mono dark:border-slate-700" />
+      <input aria-label={`presupuesto ${p.id}`} value={presupuesto} onChange={e => setPresupuesto(e.target.value)}
+        placeholder="presupuesto" inputMode="decimal"
+        className="w-20 rounded border border-slate-300 bg-transparent px-1 py-0.5 font-mono dark:border-slate-700" />
+      <input aria-label={`consumo ${p.id}`} value={consumo} onChange={e => setConsumo(e.target.value)}
+        placeholder="consumo" inputMode="decimal"
+        className="w-20 rounded border border-slate-300 bg-transparent px-1 py-0.5 font-mono dark:border-slate-700" />
+      <select aria-label={`salud ${p.id}`} value={salud} onChange={e => setSalud(e.target.value)}
+        className="rounded border border-slate-300 bg-transparent px-1 py-0.5 dark:border-slate-700">
+        <option value="healthy">healthy</option>
+        <option value="degraded">degraded</option>
+        <option value="unhealthy">unhealthy</option>
+      </select>
+      <button type="button" disabled={busy}
+        onClick={() => {
+          onSave({ saldo: num(saldo), presupuesto: num(presupuesto), consumo_periodo: num(consumo), estado_salud: salud, moneda: p.moneda_nativa })
+          setAbierto(false)
+        }}
+        className="rounded border border-teal-600 px-1.5 py-0.5 text-teal-700 hover:bg-teal-50 disabled:opacity-50 dark:text-teal-300 dark:hover:bg-teal-950">
+        ✓
+      </button>
+      <button type="button" onClick={() => setAbierto(false)}
+        className="rounded border border-slate-300 px-1.5 py-0.5 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
+        ✕
+      </button>
+    </div>
+  )
+}
+
 export default function ConfigIa() {
   const {
-    data, cambios, failovers, loading, error, ok, busy, corpus, modoFailover,
+    data, cambios, failovers, plataformas, loading, error, ok, busy, corpus, modoFailover,
     modelosPorId, proveedoresPorId, load,
     toggleEndpoint, asignarModelo, reordenarHabilitados, cambiarModoFailover,
-    actualizarSaldo, toggleModelo, toggleProveedor,
+    actualizarSaldo, toggleModelo, toggleProveedor, registrarCaptura,
   } = useConfigIa()
 
   const endpoints = data?.endpoints ?? []
@@ -341,6 +405,66 @@ export default function ConfigIa() {
                         label={`activo ${p.id}`}
                         onClick={() => void toggleProveedor(p)}
                       />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Plataformas</h2>
+        <p className="text-xs text-slate-500">
+          Capturas manuales de las consolas de cada proveedor (saldo, consumo del período, salud). El estimado se recalibra con cada captura.
+        </p>
+        {loading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : plataformas.length === 0 ? (
+          <EmptyState title="Sin plataformas registradas" />
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full min-w-[52rem] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                <tr>
+                  <th className={TH}>Plataforma</th>
+                  <th className={TH}>Plan / cobro</th>
+                  <th className={TH}>Salud</th>
+                  <th className={TH}>Saldo</th>
+                  <th className={TH}>Consumo período</th>
+                  <th className={TH}>Capturado</th>
+                  <th className={TH}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {plataformas.map(p => (
+                  <tr key={p.id} className="border-t border-slate-200 dark:border-slate-800">
+                    <td className={TD}>
+                      <div className="font-medium">{p.nombre}</div>
+                      <div className="text-[11px] text-slate-500">{p.rol}</div>
+                    </td>
+                    <td className={`${TD} text-xs`}>
+                      {p.plan ?? '—'}<span className="text-slate-400">{p.modelo_cobro ? ` · ${p.modelo_cobro}` : ''}</span>
+                    </td>
+                    <td className={TD}>
+                      {p.snapshot?.estado_salud ? (
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] ${SALUD_BADGE[p.snapshot.estado_salud] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                          {p.snapshot.estado_salud}
+                        </span>
+                      ) : <span className="text-xs text-slate-400">—</span>}
+                    </td>
+                    <td className={`${TD} font-mono text-xs`}>
+                      {p.snapshot ? fmtMonto(p.snapshot.saldo, p.snapshot.moneda) : '—'}
+                    </td>
+                    <td className={`${TD} font-mono text-xs`}>
+                      {p.snapshot ? fmtMonto(p.snapshot.consumo_periodo, p.snapshot.moneda) : '—'}
+                    </td>
+                    <td className={`${TD} whitespace-nowrap text-xs text-slate-500`}>
+                      {p.snapshot ? new Date(p.snapshot.capturado_at).toLocaleString('es-PE') : '—'}
+                    </td>
+                    <td className={TD}>
+                      <CapturaInfra p={p} busy={busy === `infra:${p.id}`} onSave={body => void registrarCaptura(p.id, body)} />
                     </td>
                   </tr>
                 ))}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  obtenerAuditoria, obtenerConfig, obtenerFailovers, patchEndpoint, patchMeta,
-  patchModelo, patchProveedor,
-  type Cambio, type ConfigData, type Endpoint, type FailoverEvento, type Modelo, type Proveedor,
+  obtenerAuditoria, obtenerConfig, obtenerFailovers, obtenerInfra, patchEndpoint, patchMeta,
+  patchModelo, patchProveedor, registrarSnapshot,
+  type Cambio, type ConfigData, type Endpoint, type FailoverEvento, type Modelo,
+  type Plataforma, type Proveedor,
 } from './api'
 export { modelosElegibles, resumenCambio } from './model'
 
@@ -12,6 +13,7 @@ export interface ConfigIaState {
   data: ConfigData | null
   cambios: Cambio[]
   failovers: FailoverEvento[]
+  plataformas: Plataforma[]
   loading: boolean
   error: string | null
   ok: string | null
@@ -28,6 +30,7 @@ export interface ConfigIaState {
   actualizarSaldo: (p: Proveedor, saldo: number | null) => Promise<void>
   toggleModelo: (m: Modelo) => Promise<void>
   toggleProveedor: (p: Proveedor) => Promise<void>
+  registrarCaptura: (plataforma: string, body: Record<string, unknown>) => Promise<void>
 }
 
 /** Cadena efectiva visible: [primario] + habilitados (auto: Gemini al final). */
@@ -54,6 +57,7 @@ export function useConfigIa(): ConfigIaState {
   const [data, setData] = useState<ConfigData | null>(null)
   const [cambios, setCambios] = useState<Cambio[]>([])
   const [failovers, setFailovers] = useState<FailoverEvento[]>([])
+  const [plataformas, setPlataformas] = useState<Plataforma[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
@@ -63,10 +67,11 @@ export function useConfigIa(): ConfigIaState {
     setLoading(true)
     setError(null)
     try {
-      const [cfg, aud, fo] = await Promise.all([obtenerConfig(), obtenerAuditoria(), obtenerFailovers()])
+      const [cfg, aud, fo, infra] = await Promise.all([obtenerConfig(), obtenerAuditoria(), obtenerFailovers(), obtenerInfra()])
       setData(cfg)
       setCambios(aud)
       setFailovers(fo)
+      setPlataformas(infra)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer la configuración IA.')
     } finally {
@@ -110,7 +115,7 @@ export function useConfigIa(): ConfigIaState {
   }, [data])
 
   return {
-    data, cambios, failovers, loading, error, ok, busy, corpus, modoFailover,
+    data, cambios, failovers, plataformas, loading, error, ok, busy, corpus, modoFailover,
     modelosPorId, proveedoresPorId, load,
     toggleEndpoint: (ep) => mutar(`ep:${ep.endpoint}`, `${ep.endpoint} ${ep.activo ? 'desactivado' : 'activado'}`,
       () => patchEndpoint(ep.endpoint, { activo: !ep.activo })),
@@ -126,5 +131,7 @@ export function useConfigIa(): ConfigIaState {
       () => patchModelo(m.id, { activo: !m.activo })),
     toggleProveedor: (p) => mutar(`prov:${p.id}`, `proveedor ${p.id} ${p.activo ? 'desactivado' : 'activado'}`,
       () => patchProveedor(p.id, { activo: !p.activo })),
+    registrarCaptura: (plataforma, body) => mutar(`infra:${plataforma}`, `captura de ${plataforma} registrada`,
+      () => registrarSnapshot(plataforma, body)),
   }
 }

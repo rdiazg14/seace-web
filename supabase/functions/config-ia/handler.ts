@@ -3,7 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 import {
   cifrarClave, enmascararClave, patchEndpoint, patchMeta, patchModelo, patchProveedor,
   sanearParaAuditoria, sanearProveedor, validarClaveEntrada, validarModelo,
-  validarProveedor, type Validacion,
+  validarProveedor, validarSnapshot, type Validacion,
 } from './nucleo.ts'
 
 type Gate = { admin: { id: string }; service: SupabaseClient } | Response
@@ -91,6 +91,21 @@ export function crearHandler(deps: Dependencias) {
           .select('id,user_id,accion,entidad,antes,despues,origen,created_at').order('id', { ascending: false }).limit(100)
         return error ? json(req, { error: 'read' }, 500) : json(req, { cambios: sanearParaAuditoria(data ?? []) })
       }
+      if (req.method === 'GET' && route.length === 1 && route[0] === 'infra') {
+        const [plat, snap] = await Promise.all([
+          service.from('infra_plataformas').select('*').order('id'),
+          service.from('infra_snapshots').select('*').order('capturado_at', { ascending: false }).limit(200),
+        ])
+        if (plat.error || snap.error) return json(req, { error: 'read' }, 500)
+        const ultimo = new Map<string, Record<string, unknown>>()
+        for (const s of (snap.data ?? []) as Record<string, unknown>[]) {
+          const p = String(s.plataforma)
+          if (!ultimo.has(p)) ultimo.set(p, s)
+        }
+        return json(req, {
+          plataformas: (plat.data ?? []).map(p => ({ ...p, snapshot: ultimo.get(String(p.id)) ?? null })),
+        })
+      }
       if (req.method === 'GET' && route.length === 1 && route[0] === 'failover') {
         const { data, error } = await service.from('ia_failover_eventos')
           .select('id,endpoint,de_proveedor,de_modelo,a_proveedor,a_modelo,error_kind,status,modo,posicion,ok,dur_ms,request_id,version_config,created_at')
@@ -131,6 +146,22 @@ export function crearHandler(deps: Dependencias) {
         table = 'ia_endpoints'; operation = 'editar'; valid = patchEndpoint(id, body)
       } else if (resource === 'meta' && route.length === 2 && req.method === 'PATCH') {
         table = 'ia_meta'; operation = 'editar'; valid = patchMeta(id, body)
+      } else if (resource === 'infra' && route.length === 3 && route[2] === 'snapshot' && req.method === 'POST') {
+        valid = validarSnapshot(body)
+        if (valid.ok) {
+          const { data: snap, error: sErr } = await service.from('infra_snapshots').insert({
+            plataforma: id,
+            capturado_at: (valid.datos.capturado_at as string | null) ?? new Date().toISOString(),
+            saldo: valid.datos.saldo, presupuesto: valid.datos.presupuesto,
+            consumo_periodo: valid.datos.consumo_periodo, moneda: valid.datos.moneda,
+            estado_salud: valid.datos.estado_salud, metricas: valid.datos.metricas,
+            detalle: valid.datos.detalle, fuente: valid.datos.fuente,
+            registrado_por: admin.id,
+          }).select().single()
+          if (sErr) return json(req, { error: sErr.code === '23503' ? 'validation' : 'write' }, sErr.code === '23503' ? 400 : 500)
+          return json(req, { snapshot: snap })
+        }
+        return json(req, { error: 'validation', mensaje: valid.mensaje }, 400)
       } else return json(req, { error: 'method' }, 405)
       if (!valid.ok) return json(req, { error: 'validation', mensaje: valid.mensaje }, 400)
       const { data, error } = await service.rpc('ia_config_mutar', {

@@ -111,4 +111,40 @@ describe('config-ia HTTP', () => {
     const body = await r.json()
     expect(body.eventos[0].a_proveedor).toBe('gemini')
   })
+  it('GET /infra devuelve plataforma con su snapshot más reciente (OPS-011)', async () => {
+    const { handler, service } = setup()
+    service.from.mockImplementation((table: string) => {
+      const data = table === 'infra_plataformas'
+        ? [{ id: 'novita', nombre: 'Novita AI', tipo: 'ia' }]
+        : table === 'infra_snapshots'
+          ? [{ plataforma: 'novita', capturado_at: '2026-10-09T10:00:00Z', saldo: 90 },
+             { plataforma: 'novita', capturado_at: '2026-10-08T10:00:00Z', saldo: 100 }] : []
+      const result = { data, error: null }
+      return {
+        select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        then: (resolve: (v: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+      }
+    })
+    const r = await handler(request('/infra', 'GET'))
+    expect(r.status).toBe(200)
+    const body = await r.json()
+    expect(body.plataformas[0].snapshot.saldo).toBe(90)
+  })
+  it('POST /infra/:id/snapshot inserta captura validada y rechaza secretos', async () => {
+    const { handler, service } = setup()
+    const insert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { id: 7, plataforma: 'qwen' }, error: null }),
+      }),
+    })
+    service.from.mockReturnValue({ insert })
+    const r = await handler(request('/infra/qwen/snapshot', 'POST', { saldo: 10.5, estado_salud: 'healthy' }))
+    expect(r.status).toBe(200)
+    expect(insert.mock.calls[0][0]).toMatchObject({ plataforma: 'qwen', saldo: 10.5, registrado_por: ACTOR })
+    const bad = await handler(request('/infra/qwen/snapshot', 'POST', { saldo: 5, metricas: { api_key: 'x' } }))
+    expect(bad.status).toBe(400)
+    expect(insert).toHaveBeenCalledTimes(1)
+    const badNum = await handler(request('/infra/qwen/snapshot', 'POST', { saldo: -3 }))
+    expect(badNum.status).toBe(400)
+  })
 })

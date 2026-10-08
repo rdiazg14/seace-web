@@ -388,6 +388,56 @@ export function patchEndpoint(endpoint: string, body: Record<string, unknown>): 
 }
 
 // ---------------------------------------------------------------------------
+// Infraestructura: capturas manuales de consola (OPS-011)
+// ---------------------------------------------------------------------------
+
+const SALUDES = ['healthy', 'degraded', 'unhealthy', 'desconocido'] as const
+
+function numeroONull(body: Record<string, unknown>, k: string): number | null | 'invalid' {
+  const v = body[k]
+  if (v === undefined || v === null || v === '') return null
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return 'invalid'
+  return v
+}
+
+/** Snapshot manual: el admin copia lo que ve en la consola del proveedor. */
+export function validarSnapshot(body: Record<string, unknown>): Validacion {
+  const datos: Record<string, unknown> = {}
+  for (const k of ['saldo', 'presupuesto', 'consumo_periodo'] as const) {
+    const v = numeroONull(body, k)
+    if (v === 'invalid') return { ok: false, mensaje: `${k} debe ser número ≥ 0 o null.` }
+    datos[k] = v
+  }
+  const moneda = texto(body, 'moneda')
+  if (moneda && !/^[A-Z]{3}$/.test(moneda)) return { ok: false, mensaje: 'moneda debe ser código ISO (USD, PEN).' }
+  datos.moneda = moneda || 'USD'
+  const salud = texto(body, 'estado_salud')
+  if (salud && !(SALUDES as readonly string[]).includes(salud)) {
+    return { ok: false, mensaje: `estado_salud debe ser ${SALUDES.join('|')}.` }
+  }
+  datos.estado_salud = salud || null
+  const fuente = texto(body, 'fuente')
+  if (fuente.length > 120) return { ok: false, mensaje: 'fuente ≤120 caracteres.' }
+  datos.fuente = fuente || 'manual:consola'
+  const capturado = texto(body, 'capturado_at')
+  if (capturado && Number.isNaN(Date.parse(capturado))) {
+    return { ok: false, mensaje: 'capturado_at debe ser fecha ISO.' }
+  }
+  datos.capturado_at = capturado || null
+  for (const k of ['metricas', 'detalle'] as const) {
+    const v = body[k]
+    if (v !== undefined && v !== null && !esObjeto(v)) {
+      return { ok: false, mensaje: `${k} debe ser objeto JSON.` }
+    }
+    if (v !== undefined && v !== null && contieneSecreto(v)) {
+      return { ok: false, mensaje: `${k} no puede contener secretos.` }
+    }
+    datos[k] = v ?? (k === 'metricas' ? {} : null)
+  }
+  return { ok: true, datos }
+}
+
+// ---------------------------------------------------------------------------
 // Salida segura: ninguna respuesta lleva material de clave
 // ---------------------------------------------------------------------------
 
