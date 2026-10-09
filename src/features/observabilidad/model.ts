@@ -187,10 +187,12 @@ export function diasDesde(isoDate: string, ahora: Date = new Date()): number {
 }
 
 export function diasHasta(isoDate: string, ahora: Date = new Date()): number {
-  const d = new Date(`${isoDate}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return 0
+  // Acepta '2026-12-18', '2026-12-18T15:07:45Z' y '2026-12-18 15:07:45 UTC'
+  // (formato que escribe el trigger en KV); toma solo la parte de fecha.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate)
+  if (!m) return 0
   const utcHoy = Date.UTC(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
-  const utcVer = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  const utcVer = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
   return Math.round((utcVer - utcHoy) / 86_400_000)
 }
 

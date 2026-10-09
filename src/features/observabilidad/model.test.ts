@@ -60,6 +60,10 @@ describe('formatos de observabilidad', () => {
     const futuro = new Date()
     futuro.setDate(futuro.getDate() + 10)
     expect(diasHasta(localIso(futuro))).toBe(10)
+    // Formato real del trigger en KV: 'YYYY-MM-DD HH:mm:ss UTC'
+    const iso = localIso(futuro)
+    expect(diasHasta(`${iso} 15:07:45 UTC`)).toBe(10)
+    expect(diasHasta(`${iso}T15:07:45Z`)).toBe(10)
   })
 
   it('etiquetas de componente y tipo + umbral de trigger', () => {
