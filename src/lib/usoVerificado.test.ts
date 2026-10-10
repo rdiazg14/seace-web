@@ -164,3 +164,20 @@ describe('asistente por contrato: declarado frente a verificado', () => {
     expect(out[1]).toBe(vacio)
   })
 })
+
+describe('chat general: fin de la respuesta', () => {
+  const enCurso: ChatMsg = { role: 'bot', text: 'Hay 2', stage: 'Redactando la respuesta…', query: 'q' }
+
+  it('el mensaje final de un stream apaga el indicador de etapa', () => {
+    const { s } = aplicarEventoChat({ ...STREAM_INICIAL, text: 'Hay 2' }, { stage: 'done', usage: { prompt: 5, completion: 1 } }, 'q')
+    const final = { ...enCurso, ...mensajeDesdeStream(s, [], 'q') }
+    expect(final.stage).toBeUndefined()
+    expect(final.text).toBe('Hay 2')
+  })
+
+  it('también lo apagan la respuesta JSON, el fallo HTTP y el fallo de conexión', () => {
+    expect({ ...enCurso, ...mensajeDesdeJson({ respuesta: 'ok' }, [], 'q') }.stage).toBeUndefined()
+    expect({ ...enCurso, ...mensajeHttpFallido(503, {}, 'q') }.stage).toBeUndefined()
+    expect({ ...enCurso, ...mensajeConexionFallida(true, 'q') }.stage).toBeUndefined()
+  })
+})

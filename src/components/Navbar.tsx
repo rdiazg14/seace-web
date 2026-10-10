@@ -15,9 +15,13 @@ const LINKS = [
 export default function Navbar() {
   const [open, setOpen] = useState(false)
   const { theme, toggle } = useTheme()
-  const { perfil, signOut } = useAuth()
+  const { perfil, loading, signOut } = useAuth()
   const navigate = useNavigate()
   const isAdmin = perfil?.rol === 'admin'
+  // Mientras se resuelve la sesión no se sabe qué enlaces corresponden: se
+  // reserva el espacio y todo aparece de una vez, en lugar de mostrar primero
+  // los enlaces comunes y después reacomodar la barra con los de admin.
+  const oculto = loading ? 'invisible' : ''
 
   const linkCls = ({ isActive }: { isActive: boolean }) =>
     `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
@@ -40,7 +44,7 @@ export default function Navbar() {
           <span className="hidden truncate text-xs text-slate-400 sm:inline">Monitor</span>
         </NavLink>
 
-        <div className="hidden items-center gap-1 md:flex">
+        <div className={`hidden items-center gap-1 md:flex ${oculto}`} aria-busy={loading}>
           {LINKS.map(l => (
             <NavLink key={l.to} to={l.to} end={l.end} className={linkCls}>
               {l.label}

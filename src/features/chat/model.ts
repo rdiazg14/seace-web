@@ -147,7 +147,7 @@ export function mensajeHttpFallido(status: number, data: ErrorProxy, query: stri
     || data.error === 'rate_limited'
     || data.error === 'daily_limited'
     || data.error === 'over_capacity'
-  return { role: 'bot', text: mensajeLimite(status, data), error: !isLimit, limit: isLimit, query, requestId: requestIdDe(data.request_id) }
+  return { role: 'bot', text: mensajeLimite(status, data), error: !isLimit, limit: isLimit, query, requestId: requestIdDe(data.request_id), stage: undefined }
 }
 
 /** Fallo informado por el proxy dentro del stream; conserva el id del request si vino. */
@@ -170,6 +170,7 @@ export function mensajeConexionFallida(abortado: boolean, query: string, request
     error: true,
     query,
     requestId,
+    stage: undefined,
   }
 }
 
@@ -261,6 +262,8 @@ export function mensajeDesdeStream(s: StreamChat, contratos: Contrato[], query: 
     tokens_completion: s.usage.completion,
     requestId: s.requestId,
     verificado: Boolean(s.requestId),
+    // Todo mensaje final apaga el indicador de etapa ("Redactando la respuesta…").
+    stage: undefined,
   }
 }
 
@@ -278,6 +281,7 @@ export function mensajeDesdeJson(data: RespuestaJson, contratos: Contrato[], que
     tokens_completion: data.usage?.completion ?? 0,
     requestId: requestIdDe(data.request_id),
     verificado: Boolean(requestIdDe(data.request_id)),
+    stage: undefined,
   }
 }
 

@@ -75,6 +75,8 @@ export function useRutaDia() {
   const [intentoOcultos, setIntentoOcultos] = useState(0)
   const [intentoPipeline, setIntentoPipeline] = useState(0)
   const [pipelineError, setPipelineError] = useState(false)
+  // Mientras no llega la lectura no se sabe la fecha: la cabecera no debe decir "sin dato".
+  const [pipelineCargando, setPipelineCargando] = useState(true)
   const [universoIncompleto, setUniversoIncompleto] = useState<{ cargados: number; total: number | null } | null>(null)
   const [analisisIncompleto, setAnalisisIncompleto] = useState(false)
   // Reloj de la pantalla: vigencia, urgencia y KPIs dependen de la fecha y se
@@ -120,13 +122,17 @@ export function useRutaDia() {
   useEffect(() => {
     const carga = iniciarCarga(PLAZO_LECTURA_MS)
     setPipelineError(false)
+    setPipelineCargando(true)
     void cargarEstadoPipeline(carga.signal).then((fila) => {
       carga.exigirVigente()
       setActualizado(fila?.ultima_corrida_utc ?? null)
       setIngesta(fila?.ultima_ingesta_utc ?? null)
     }).catch(() => {
       if (!carga.obsoleta()) setPipelineError(true)
-    }).finally(() => carga.terminar())
+    }).finally(() => {
+      carga.terminar()
+      if (!carga.obsoleta()) setPipelineCargando(false)
+    })
     return () => carga.cerrar()
   }, [intentoPipeline])
 
@@ -281,6 +287,7 @@ export function useRutaDia() {
     reintentarOcultos: () => setIntentoOcultos(n => n + 1),
     accionOcultosError: accionError && accionError.userId === userId ? accionError.texto : null,
     pipelineError,
+    pipelineCargando,
     reintentarPipeline: () => setIntentoPipeline(n => n + 1),
     universoIncompleto,
     analisisIncompleto,

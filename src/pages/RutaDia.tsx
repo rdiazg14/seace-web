@@ -22,6 +22,7 @@ export default function RutaDia() {
     reintentarOcultos,
     accionOcultosError,
     pipelineError,
+    pipelineCargando,
     reintentarPipeline,
     universoIncompleto,
     analisisIncompleto,
@@ -88,6 +89,12 @@ export default function RutaDia() {
                 Reintentar
               </button>
             </p>
+          ) : pipelineCargando ? (
+            // Mismo alto que las dos líneas definitivas: no aparece "sin dato" en rojo ni salta la cabecera.
+            <div className="space-y-1.5" aria-busy="true">
+              <Skeleton className="ml-auto h-3 w-44" />
+              <Skeleton className="ml-auto h-3 w-36" />
+            </div>
           ) : (
             <div className="space-y-0.5 text-right">
               <p className={toneCls(headerIng.tone)}>{headerIng.texto}</p>

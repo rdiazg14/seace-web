@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../lib/auth'
-import { ErrorBox, Skeleton } from './ui'
+import { ErrorBox, PageSkeleton } from './ui'
 
 export function RequireAuth({
   children,
@@ -13,14 +13,7 @@ export function RequireAuth({
   const { session, perfil, loading, perfilError, retryPerfil } = useAuth()
   const loc = useLocation()
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl space-y-3 px-3 py-8 sm:px-4">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    )
-  }
+  if (loading) return <PageSkeleton />
 
   if (!session) {
     return <Navigate to="/login" replace state={{ from: loc.pathname }} />

@@ -87,3 +87,15 @@ describe('Diario: errores de carga recuperables', () => {
     expect(await screen.findByText('Análisis: sin dato')).toBeInTheDocument()
   })
 })
+
+describe('Diario: cabecera durante el arranque', () => {
+  it('mientras llega el estado del pipeline no afirma "sin dato"; lo dice solo si de verdad no hay fila', async () => {
+    let resolver!: (v: null) => void
+    m.pipeline.mockReturnValue(new Promise((res) => { resolver = res }))
+    renderUI(<RutaDia />)
+    expect(await screen.findByText('Nuevos hoy')).toBeInTheDocument()
+    expect(screen.queryByText(/sin dato/)).toBeNull()
+    resolver(null)
+    expect(await screen.findByText('Análisis: sin dato')).toBeInTheDocument()
+  })
+})

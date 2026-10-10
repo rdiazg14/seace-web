@@ -223,34 +223,35 @@ export function useAsistente(userId: string | null, contratoId: number) {
         }
         const r = interpretarCotizarJson(res.status, res.ok, payload, q)
         if (r.kind === 'excepcion') throw new Error(r.message)
+        // Sin `return`: el mensaje del bot (también un aviso o un límite) se guarda
+        // más abajo; al salir antes la conversación quedaba solo con la pregunta.
         if (r.kind === 'fallo') {
           cancelarRevelado()
           patchBot(prev => falloBot(prev, r.text, r.extra))
-          return
+        } else {
+          patchBot(prev => escenarioListo(prev, payload, r.escenario))
+          applyMeta(payload)
         }
-        patchBot(prev => escenarioListo(prev, payload, r.escenario))
-        applyMeta(payload)
-        return
+      } else {
+        let gotData = false
+        let streamErr: string | null = null
+        await readSseEvents(res, (ev) => {
+          const efecto = aplicarEventoCotizar(botMsg, ev)
+          if (efecto.error) {
+            streamErr = efecto.error
+            return
+          }
+          if (efecto.datos) {
+            gotData = true
+            cancelarRevelado()
+          }
+          if (efecto.msg !== botMsg) patchBot(() => efecto.msg)
+          if (efecto.programarRevelado) programarRevelado()
+          if (efecto.datos) applyMeta(efecto.datos)
+        })
+        if (streamErr) throw new Error(streamErr)
+        if (!gotData) throw new Error('respuesta incompleta')
       }
-
-      let gotData = false
-      let streamErr: string | null = null
-      await readSseEvents(res, (ev) => {
-        const efecto = aplicarEventoCotizar(botMsg, ev)
-        if (efecto.error) {
-          streamErr = efecto.error
-          return
-        }
-        if (efecto.datos) {
-          gotData = true
-          cancelarRevelado()
-        }
-        if (efecto.msg !== botMsg) patchBot(() => efecto.msg)
-        if (efecto.programarRevelado) programarRevelado()
-        if (efecto.datos) applyMeta(efecto.datos)
-      })
-      if (streamErr) throw new Error(streamErr)
-      if (!gotData) throw new Error('respuesta incompleta')
     } catch (err) {
       const errMsg: EscenaMsg = {
         id: botMsg.id,

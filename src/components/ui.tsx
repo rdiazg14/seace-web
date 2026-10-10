@@ -4,6 +4,20 @@ export function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800 ${className}`} />
 }
 
+/**
+ * Marcador único mientras se resuelve la sesión y mientras llega el código de
+ * la ruta. Ambas esperas ocurren seguidas al abrir la app: con el mismo
+ * marcador el contenido no salta entre una y otra.
+ */
+export function PageSkeleton() {
+  return (
+    <div className="mx-auto max-w-6xl space-y-4 px-3 py-5 sm:px-4" aria-busy="true">
+      <Skeleton className="h-10 w-48" />
+      <Skeleton className="h-32 w-full" />
+    </div>
+  )
+}
+
 export function ErrorBox({ children, retry }: { children: ReactNode; retry?: () => void }) {
   return (
     <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
