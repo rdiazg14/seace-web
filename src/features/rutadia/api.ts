@@ -10,88 +10,122 @@ import {
 const PAGE = 1000
 const ID_CHUNK = 1000
 
+/** Tope defensivo de memoria; alcanzarlo se informa como lectura incompleta. */
+export const MAX_FILAS = 20000
+
 export type AnalisisFilaScore = {
   contrato_id: number
   pdf_hash: string
   slice: AnalisisScoreSlice | null
 }
 
+/** `completo=false`: se alcanzó el tope y quedaron filas sin cargar. `total` es
+ *  el conteo exacto del servidor en la primera página (null si no lo informó). */
+export interface Lectura<T> {
+  filas: T[]
+  completo: boolean
+  total: number | null
+}
+
+type Pagina = { data: unknown[] | null; error: unknown; count?: number | null }
+
 /** Corta el trabajo dependiente cuando la carga ya fue cancelada o venció. */
 function exigirVigente(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException('Carga cancelada', 'AbortError')
 }
 
-export async function fetchUniverso(signal?: AbortSignal): Promise<Contrato[]> {
-  const out: Contrato[] = []
-  let from = 0
+/**
+ * Recorre una consulta ordenada hasta agotarla. El fin lo decide el conteo
+ * exacto del servidor, no el tamaño de página: si `max_rows` de PostgREST
+ * fuese menor que PAGE, una página corta no se confunde con la última.
+ */
+async function leerPaginado<T>(
+  pagina: (desde: number, hasta: number, contar: boolean) => PromiseLike<Pagina>,
+  signal?: AbortSignal,
+): Promise<Lectura<T>> {
+  const filas: T[] = []
+  let total: number | null = null
   for (;;) {
     exigirVigente(signal)
+    const primera = filas.length === 0
+    const { data, error, count } = await pagina(filas.length, filas.length + PAGE - 1, primera)
+    if (error) throw error
+    if (primera && typeof count === 'number') total = count
+    const batch = (data ?? []) as T[]
+    filas.push(...batch)
+    if (batch.length === 0) break
+    if (total != null ? filas.length >= total : batch.length < PAGE) break
+    if (filas.length >= MAX_FILAS) return { filas, completo: false, total }
+  }
+  return { filas, completo: true, total }
+}
+
+export async function fetchUniverso(signal?: AbortSignal): Promise<Lectura<Contrato>> {
+  return leerPaginado<Contrato>((desde, hasta, contar) => {
     let q = supabase
       .from('v_contratos')
-      .select(RUTA_DIA_COLS)
+      .select(RUTA_DIA_COLS, contar ? { count: 'exact' } : undefined)
       .in('estado', ['Vigente', 'En Evaluación'])
       .or('categoria_it.not.is.null,relevancia_ia.not.is.null')
       // PostgREST: .range() sin .order() no garantiza orden entre paginas;
       // la pagina 2 puede repetir filas de la 1 y omitir otras.
       .order('id')
-      .range(from, from + PAGE - 1)
+      .range(desde, hasta)
     if (signal) q = q.abortSignal(signal)
-    const { data, error } = await q
-    if (error) throw error
-    const batch = (data ?? []) as unknown as Contrato[]
-    out.push(...batch)
-    if (batch.length < PAGE) break
-    from += PAGE
-    if (from >= 20000) break
-  }
-  return out
+    return q as unknown as PromiseLike<Pagina>
+  }, signal)
+}
+
+type FilaAnalisis = {
+  contrato_id: number
+  pdf_hash: string
+  encaje?: unknown
+  economia?: unknown
+  condiciones?: unknown
+  veredicto?: unknown
 }
 
 /**
  * Round-trip a analisis_contrato (chunked por límite URL).
  * Select JSON path: solo encaje/economia/condiciones/veredicto del payload.
- * Hoy hay ~17 filas; se pide por ids postulables del universo.
  * Los trozos van en paralelo (Promise.all), no secuenciales, para no
- * sumar latencia de red en cada página de la Ruta del día.
+ * sumar latencia de red en cada página de la Ruta del día. Cada trozo se
+ * pagina por su clave (contrato_id, pdf_hash): un contrato puede tener una
+ * fila por hash de TDR y ninguna se pierde por el límite de filas del servidor.
  */
-export async function fetchAnalisisScore(ids: number[], signal?: AbortSignal): Promise<AnalisisFilaScore[]> {
-  if (ids.length === 0) return []
+export async function fetchAnalisisScore(ids: number[], signal?: AbortSignal): Promise<Lectura<AnalisisFilaScore>> {
+  if (ids.length === 0) return { filas: [], completo: true, total: 0 }
   exigirVigente(signal)
   const chunks: number[][] = []
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     chunks.push(ids.slice(i, i + ID_CHUNK))
   }
-  const resultados = await Promise.all(
-    chunks.map(async (chunk) => {
+  const lecturas = await Promise.all(
+    chunks.map(chunk => leerPaginado<FilaAnalisis>((desde, hasta, contar) => {
       let q = supabase
         .from('analisis_contrato')
-        .select(ANALISIS_SCORE_SELECT)
+        .select(ANALISIS_SCORE_SELECT, contar ? { count: 'exact' } : undefined)
         .in('contrato_id', chunk)
+        .order('contrato_id')
+        .order('pdf_hash')
+        .range(desde, hasta)
       if (signal) q = q.abortSignal(signal)
-      const { data, error } = await q
-      if (error) throw error
-      return data ?? []
-    }),
+      return q as unknown as PromiseLike<Pagina>
+    }, signal)),
   )
-  const out: AnalisisFilaScore[] = []
-  for (const rows of resultados) {
-    for (const row of rows) {
-      const r = row as {
-        contrato_id: number
-        pdf_hash: string
-        encaje?: unknown
-        economia?: unknown
-        condiciones?: unknown
-        veredicto?: unknown
-      }
-      out.push({
+  const filas: AnalisisFilaScore[] = []
+  let total: number | null = 0
+  for (const lectura of lecturas) {
+    total = total == null || lectura.total == null ? null : total + lectura.total
+    for (const r of lectura.filas) {
+      filas.push({
         contrato_id: r.contrato_id,
         pdf_hash: r.pdf_hash,
         slice: sliceDesdeFilaAnalisis(r),
       })
     }
   }
-  return out
+  return { filas, completo: lecturas.every(l => l.completo), total }
 }
 
 export interface EstadoPipeline {
@@ -113,14 +147,17 @@ export async function cargarEstadoPipeline(signal?: AbortSignal): Promise<Estado
 
 /** Conjunto vacío = el usuario no ocultó nada; un fallo de lectura se lanza. */
 export async function cargarOcultos(userId: string, signal?: AbortSignal): Promise<Set<number>> {
-  let q = supabase
-    .from('ruta_ocultos')
-    .select('contrato_id')
-    .eq('user_id', userId)
-  if (signal) q = q.abortSignal(signal)
-  const { data, error } = await q
-  if (error) throw error
-  return new Set((data ?? []).map(r => (r as { contrato_id: number }).contrato_id))
+  const { filas } = await leerPaginado<{ contrato_id: number }>((desde, hasta, contar) => {
+    let q = supabase
+      .from('ruta_ocultos')
+      .select('contrato_id', contar ? { count: 'exact' } : undefined)
+      .eq('user_id', userId)
+      .order('contrato_id')
+      .range(desde, hasta)
+    if (signal) q = q.abortSignal(signal)
+    return q as unknown as PromiseLike<Pagina>
+  }, signal)
+  return new Set(filas.map(r => r.contrato_id))
 }
 
 export async function ocultarContrato(userId: string, contratoId: number): Promise<boolean> {

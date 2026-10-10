@@ -24,14 +24,17 @@ vi.mock('../lib/supabase', () => ({ supabase: {
   auth: { getSession: m.getSession, onAuthStateChange: m.subscribe, signOut: vi.fn() },
   from: m.from,
 } }))
-vi.mock('../features/rutadia/api', () => ({
-  fetchUniverso: m.universo,
-  fetchAnalisisScore: m.analisis,
-  cargarEstadoPipeline: m.pipeline,
-  cargarOcultos: m.ocultos,
-  ocultarContrato: vi.fn(async () => true),
-  restaurarContrato: vi.fn(async () => true),
-}))
+vi.mock('../features/rutadia/api', () => {
+  const comoLectura = (v: unknown) => (Array.isArray(v) ? { filas: v, completo: true, total: v.length } : v)
+  return {
+    fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
+    fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
+    cargarEstadoPipeline: m.pipeline,
+    cargarOcultos: m.ocultos,
+    ocultarContrato: vi.fn(async () => true),
+    restaurarContrato: vi.fn(async () => true),
+  }
+})
 
 const session = (id: string) => ({ user: { id } }) as Session
 let notify: (event: AuthChangeEvent, next: Session | null) => void

@@ -26,6 +26,7 @@ export const TAM_PAGINA_OPCIONES = [10, 20, 50, 100] as const
 // Universo + análisis recorren varias páginas; las lecturas pequeñas usan el plazo del perfil.
 export const PLAZO_UNIVERSO_MS = 45000
 export const PLAZO_LECTURA_MS = 15000
+export const REFRESCO_RELOJ_MS = 60000
 
 /** Carga con transporte cancelable. `cerrar()` (cleanup del efecto) la vuelve
  *  obsoleta: su resultado ya no debe tocar estado. Si vence el plazo sigue
@@ -74,6 +75,11 @@ export function useRutaDia() {
   const [intentoOcultos, setIntentoOcultos] = useState(0)
   const [intentoPipeline, setIntentoPipeline] = useState(0)
   const [pipelineError, setPipelineError] = useState(false)
+  const [universoIncompleto, setUniversoIncompleto] = useState<{ cargados: number; total: number | null } | null>(null)
+  const [analisisIncompleto, setAnalisisIncompleto] = useState(false)
+  // Reloj de la pantalla: vigencia, urgencia y KPIs dependen de la fecha y se
+  // recalculan aunque Diario quede abierto al cambiar de día o de ventana.
+  const [ahora, setAhora] = useState(() => new Date())
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
   const [linea, setLinea] = useState<string | null>(null)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
@@ -96,6 +102,18 @@ export function useRutaDia() {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
+  useEffect(() => {
+    const refrescar = () => {
+      if (document.visibilityState !== 'hidden') setAhora(new Date())
+    }
+    const timer = setInterval(refrescar, REFRESCO_RELOJ_MS)
+    document.addEventListener('visibilitychange', refrescar)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', refrescar)
+    }
+  }, [])
+
   // Informativo: su fallo se señala aparte y nunca bloquea la lista.
   useEffect(() => {
     const carga = iniciarCarga(PLAZO_LECTURA_MS)
@@ -116,14 +134,17 @@ export function useRutaDia() {
       setCargandoUniverso(true)
       setError(null)
       try {
-        const rows = await fetchUniverso(carga.signal)
+        const universo = await fetchUniverso(carga.signal)
         // Tras salir de la pantalla o vencer el plazo no se inicia el análisis.
         carga.exigirVigente()
         // Ids del universo (Vigente + En Evaluación).
-        const analisis = await fetchAnalisisScore(rows.map(c => c.id), carga.signal)
+        const analisis = await fetchAnalisisScore(universo.filas.map(c => c.id), carga.signal)
         carga.exigirVigente()
-        setRaw(rows)
-        setAnalisisFilas(analisis)
+        setRaw(universo.filas)
+        setAnalisisFilas(analisis.filas)
+        setUniversoIncompleto(universo.completo ? null : { cargados: universo.filas.length, total: universo.total })
+        setAnalisisIncompleto(!analisis.completo)
+        setAhora(new Date())
       } catch (e) {
         if (carga.obsoleta()) return
         if (carga.vencida()) setError('La carga tardó demasiado. Reintenta en unos momentos.')
@@ -192,9 +213,9 @@ export function useRutaDia() {
   const scored = useMemo(
     () => rankingActivo(raw.map(c => {
       const slice = resolverAnalisisParaContrato(c, analisisFilas)
-      return puntuar(c, new Date(), slice)
+      return puntuar(c, ahora, slice)
     })),
-    [raw, analisisFilas],
+    [raw, analisisFilas, ahora],
   )
 
   const detalleOportunidad = detalleId != null
@@ -203,8 +224,8 @@ export function useRutaDia() {
 
   // Postulables: todos, ordenados por vencimiento (hoy > mañana > semana > …) y score.
   const postulablesBase = useMemo(
-    () => ordenarPostulables(aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable' })),
-    [scored, nivel, linea, cierre],
+    () => ordenarPostulables(aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable', ahora }), ahora),
+    [scored, nivel, linea, cierre, ahora],
   )
   const postulablesVisibles = useMemo(
     () => postulablesBase.filter(o => !ocultos.has(o.contrato.id)),
@@ -215,8 +236,8 @@ export function useRutaDia() {
     [postulablesBase, ocultos],
   )
   const otras = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras }),
-    [scored, nivel, linea, estadoOtras],
+    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras, ahora }),
+    [scored, nivel, linea, estadoOtras, ahora],
   )
 
   const totalPagPost = Math.max(1, Math.ceil(postulablesVisibles.length / tamPagina))
@@ -227,7 +248,7 @@ export function useRutaDia() {
   const pagOtras = Math.min(paginaOtras, totalPagOtras)
   const otrasPaginados = otras.slice((pagOtras - 1) * tamPagina, pagOtras * tamPagina)
 
-  const kpis = useMemo(() => resumenDiario(scored), [scored])
+  const kpis = useMemo(() => resumenDiario(scored, ahora), [scored, ahora])
 
   const filtrosActivos = (nivel ? 1 : 0) + (linea ? 1 : 0) + (cierre !== 'todos' ? 1 : 0)
 
@@ -239,6 +260,8 @@ export function useRutaDia() {
     reintentarOcultos: () => setIntentoOcultos(n => n + 1),
     pipelineError,
     reintentarPipeline: () => setIntentoPipeline(n => n + 1),
+    universoIncompleto,
+    analisisIncompleto,
     nivel,
     setNivel,
     linea,

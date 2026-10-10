@@ -15,14 +15,17 @@ const m = vi.hoisted(() => ({
 }))
 vi.mock('../lib/auth', () => ({ useAuth: () => authState }))
 vi.mock('../lib/supabase', () => import('../test/fakeSupabase'))
-vi.mock('../features/rutadia/api', () => ({
-  fetchUniverso: m.universo,
-  fetchAnalisisScore: m.analisis,
-  cargarEstadoPipeline: m.pipeline,
-  cargarOcultos: m.ocultos,
-  ocultarContrato: vi.fn(async () => true),
-  restaurarContrato: vi.fn(async () => true),
-}))
+vi.mock('../features/rutadia/api', () => {
+  const comoLectura = (v: unknown) => (Array.isArray(v) ? { filas: v, completo: true, total: v.length } : v)
+  return {
+    fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
+    fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
+    cargarEstadoPipeline: m.pipeline,
+    cargarOcultos: m.ocultos,
+    ocultarContrato: vi.fn(async () => true),
+    restaurarContrato: vi.fn(async () => true),
+  }
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -55,6 +58,21 @@ describe('Diario: errores de carga recuperables', () => {
     expect(await screen.findByText('Nuevos hoy')).toBeInTheDocument()
     expect(screen.queryByText('fallo de red')).not.toBeInTheDocument()
     expect(m.universo).toHaveBeenCalledTimes(2)
+  })
+
+  it('lectura incompleta: avisa cuántos contratos se cargaron del total', async () => {
+    m.universo.mockResolvedValue({ filas: [], completo: false, total: 25000 })
+    m.analisis.mockResolvedValue({ filas: [], completo: false, total: null })
+    renderUI(<RutaDia />)
+    expect(await screen.findByText(/Lista incompleta: se cargaron 0 de 25,000 contratos/)).toBeInTheDocument()
+    expect(screen.getByText(/No se cargaron todos los análisis/)).toBeInTheDocument()
+  })
+
+  it('lectura completa: sin avisos de integridad', async () => {
+    renderUI(<RutaDia />)
+    expect(await screen.findByText('Sin postulables con esos filtros')).toBeInTheDocument()
+    expect(screen.queryByText(/Lista incompleta/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No se cargaron todos los análisis/)).not.toBeInTheDocument()
   })
 
   it('fallo del pipeline: no se presenta como "sin dato" ni oculta la lista', async () => {

@@ -22,6 +22,8 @@ export default function RutaDia() {
     reintentarOcultos,
     pipelineError,
     reintentarPipeline,
+    universoIncompleto,
+    analisisIncompleto,
     nivel,
     setNivel,
     linea,
@@ -98,6 +100,18 @@ export default function RutaDia() {
       {ocultosError && (
         <ErrorBox retry={reintentarOcultos}>
           No pudimos cargar tus proyectos ocultos; la lista puede incluir algunos que ya ocultaste.
+        </ErrorBox>
+      )}
+      {universoIncompleto && (
+        <ErrorBox retry={recargar}>
+          Lista incompleta: se cargaron {universoIncompleto.cargados.toLocaleString('es-PE')}
+          {universoIncompleto.total != null && ` de ${universoIncompleto.total.toLocaleString('es-PE')}`} contratos.
+          El ranking y los totales no incluyen el resto.
+        </ErrorBox>
+      )}
+      {analisisIncompleto && (
+        <ErrorBox retry={recargar}>
+          No se cargaron todos los análisis; algunos puntajes usan la estimación sin TDR.
         </ErrorBox>
       )}
 

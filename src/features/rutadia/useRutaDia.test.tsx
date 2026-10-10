@@ -6,7 +6,7 @@ import { StrictMode } from 'react'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Contrato } from '../../types'
-import { PLAZO_LECTURA_MS, PLAZO_UNIVERSO_MS, useRutaDia } from './useRutaDia'
+import { PLAZO_LECTURA_MS, PLAZO_UNIVERSO_MS, REFRESCO_RELOJ_MS, useRutaDia } from './useRutaDia'
 
 const m = vi.hoisted(() => ({
   auth: { session: { user: { id: 'user-a' } } as { user: { id: string } } | null },
@@ -18,14 +18,19 @@ const m = vi.hoisted(() => ({
   restaurar: vi.fn(),
 }))
 vi.mock('../../lib/auth', () => ({ useAuth: () => m.auth }))
-vi.mock('./api', () => ({
-  fetchUniverso: m.universo,
-  fetchAnalisisScore: m.analisis,
+// Los dobles devuelven filas; el adaptador las presenta como lectura completa
+// salvo que la prueba entregue una Lectura explícita (p. ej. incompleta).
+vi.mock('./api', () => {
+  const comoLectura = (v: unknown) => (Array.isArray(v) ? { filas: v, completo: true, total: v.length } : v)
+  return {
+  fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
+  fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
   cargarEstadoPipeline: m.pipeline,
   cargarOcultos: m.ocultos,
   ocultarContrato: m.ocultar,
   restaurarContrato: m.restaurar,
-}))
+  }
+})
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -268,6 +273,83 @@ describe('pipeline informativo', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.pipelineError).toBe(false)
     expect(result.current.actualizado).toBeNull()
+  })
+})
+
+describe('integridad y frescura', () => {
+  it('lectura incompleta del universo se declara con cargados y total', async () => {
+    m.universo.mockResolvedValue({ filas: [postulable(1)], completo: false, total: 25000 })
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.universoIncompleto).toEqual({ cargados: 1, total: 25000 })
+    expect(result.current.scored).toHaveLength(1)
+
+    m.universo.mockResolvedValue([postulable(1), postulable(2)])
+    act(() => result.current.recargar())
+    await waitFor(() => expect(result.current.scored).toHaveLength(2))
+    expect(result.current.universoIncompleto).toBeNull()
+  })
+
+  it('análisis incompleto se declara sin ocultar la lista', async () => {
+    m.universo.mockResolvedValue([postulable(1)])
+    m.analisis.mockResolvedValue({ filas: [], completo: false, total: null })
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.analisisIncompleto).toBe(true)
+    expect(result.current.universoIncompleto).toBeNull()
+    expect(result.current.scored).toHaveLength(1)
+  })
+
+  it('con la pantalla abierta, un contrato deja de ser postulable al vencer sin recargar datos', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T23:58:30-05:00'))
+    m.universo.mockResolvedValue([
+      { ...postulable(1), fecha_fin_cotizacion: '2026-10-10T23:59:00-05:00' },
+      postulable(2),
+    ])
+    const { result } = renderHook(useRutaDia)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(result.current.postulablesVisibles.map(o => o.contrato.id).sort()).toEqual([1, 2])
+    expect(result.current.kpis.cierranHoy).toBe(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(REFRESCO_RELOJ_MS) })
+    expect(result.current.postulablesVisibles.map(o => o.contrato.id)).toEqual([2])
+    expect(result.current.kpis.cierranHoy).toBe(0)
+    expect(m.universo).toHaveBeenCalledTimes(1)
+    expect(m.analisis).toHaveBeenCalledTimes(1)
+  })
+
+  it('salir y volver a Diario relee los datos: no hay caché que pueda quedar atrasada o cruzar cuentas', async () => {
+    m.universo.mockResolvedValue([postulable(1)])
+    const primera = renderHook(useRutaDia)
+    await waitFor(() => expect(primera.result.current.loading).toBe(false))
+    primera.unmount()
+
+    m.auth.session = { user: { id: 'user-b' } }
+    m.universo.mockResolvedValue([postulable(1), postulable(2)])
+    m.ocultos.mockResolvedValue(new Set([2]))
+    const segunda = renderHook(useRutaDia)
+    await waitFor(() => expect(segunda.result.current.loading).toBe(false))
+    expect(segunda.result.current.scored).toHaveLength(2)
+    expect(segunda.result.current.postulablesVisibles.map(o => o.contrato.id)).toEqual([1])
+    expect(m.universo).toHaveBeenCalledTimes(2)
+    expect(m.ocultos).toHaveBeenLastCalledWith('user-b', expect.any(AbortSignal))
+  })
+
+  it('el reloj no avanza con la pestaña oculta y se pone al día al volver', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T23:58:30-05:00'))
+    m.universo.mockResolvedValue([{ ...postulable(1), fecha_fin_cotizacion: '2026-10-10T23:59:00-05:00' }])
+    const visibilidad = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const { result } = renderHook(useRutaDia)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(REFRESCO_RELOJ_MS * 3) })
+    expect(result.current.postulablesVisibles).toHaveLength(1)
+
+    visibilidad.mockReturnValue('visible')
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(result.current.postulablesVisibles).toHaveLength(0)
+    visibilidad.mockRestore()
   })
 })
 
