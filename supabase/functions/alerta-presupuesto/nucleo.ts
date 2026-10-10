@@ -94,6 +94,19 @@ export function redactar(e: Evaluacion, dia: string, panelUrl: string): Correo {
   return { asunto: `[SEACE Monitor] ${titulo} (${e.pct} %)`, texto, html }
 }
 
+/** Correo de comprobación del canal: no informa ningún nivel ni cuenta como alerta enviada. */
+export function redactarPrueba(e: Evaluacion, dia: string, panelUrl: string): Correo {
+  const titulo = 'Correo de prueba de la alerta de presupuesto'
+  const cifra = `Gasto estimado del ${dia} (UTC): ${usd(e.gasto_usd)} de ${usd(e.limite_usd)} (${e.pct} %).`
+  const nota = 'Es una comprobación del envío pedida por un administrador. No indica ningún problema y no cuenta como alerta.'
+  const texto = [titulo, '', nota, cifra, '', `Detalle: ${panelUrl}`].join('\n')
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1e293b;max-width:520px">`
+    + `<p style="font-size:17px;font-weight:bold;color:#0f766e;margin:0 0 12px">SEACE Monitor</p>`
+    + `<p style="font-weight:bold">${titulo}</p><p>${nota}</p><p>${cifra}</p>`
+    + `<p><a href="${panelUrl}">Abrir Observabilidad</a></p></div>`
+  return { asunto: `[SEACE Monitor] ${titulo}`, texto, html }
+}
+
 /** El rol viene del JWT que la plataforma ya verificó (verify_jwt): solo service_role dispara la alerta. */
 export function rolDeJwt(authorization: string | null): string | null {
   const token = (authorization || '').replace(/^Bearer\s+/i, '').trim()

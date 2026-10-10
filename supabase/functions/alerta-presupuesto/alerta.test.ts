@@ -133,3 +133,45 @@ describe('handler', () => {
     expect(enviar).not.toHaveBeenCalled()
   })
 })
+
+describe('correo de prueba', () => {
+  const pedir = async (s: ReturnType<typeof setup>, cuerpo: unknown, auth = jwt('service_role')) => {
+    const res = await crearHandler(s.p)(new Request('https://x.test/functions/v1/alerta-presupuesto', {
+      method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo),
+    }))
+    return { status: res.status, body: await res.json() as Record<string, unknown> }
+  }
+
+  it('envía un correo rotulado como prueba sin reclamar ni marcar ningún nivel', async () => {
+    const s = setup({ cents: 10 })
+    const r = await pedir(s, { prueba: true })
+    expect(r.body).toMatchObject({ resultado: 'prueba_enviada', nivel: 'ok' })
+    expect(s.enviar).toHaveBeenCalledTimes(1)
+    const correo = s.enviar.mock.calls[0][1] as { asunto: string; texto: string }
+    expect(correo.asunto).toBe('[SEACE Monitor] Correo de prueba de la alerta de presupuesto')
+    expect(correo.texto).toContain('no cuenta como alerta')
+    expect(s.p.reclamar).not.toHaveBeenCalled()
+    expect(s.p.marcar).not.toHaveBeenCalled()
+  })
+
+  it('exige service_role igual que el disparo normal', async () => {
+    const s = setup()
+    expect((await pedir(s, { prueba: true }, jwt('authenticated'))).status).toBe(403)
+    expect(s.enviar).not.toHaveBeenCalled()
+  })
+
+  it('solo prueba:true exacto la activa; otro cuerpo sigue el flujo normal', async () => {
+    const s = setup({ cents: 10 })
+    expect((await pedir(s, { prueba: 'true' })).body).toMatchObject({ resultado: 'sin_alerta' })
+    expect((await pedir(s, {})).body).toMatchObject({ resultado: 'sin_alerta' })
+    expect(s.enviar).not.toHaveBeenCalled()
+  })
+
+  it('sin SMTP o con fallo de envío lo dice sin detalle', async () => {
+    expect((await pedir(setup({ smtp: false }), { prueba: true })).body).toEqual({ resultado: 'smtp_no_configurado' })
+    const s = setup()
+    s.enviar.mockRejectedValueOnce(new Error('535 credenciales'))
+    const r = await pedir(s, { prueba: true })
+    expect(r.body).toEqual({ resultado: 'fallo_envio', prueba: true })
+  })
+})

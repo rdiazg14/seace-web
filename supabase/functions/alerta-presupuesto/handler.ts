@@ -4,7 +4,7 @@
  * decide el nivel, reclama el envío de forma atómica (un correo por nivel y
  * día) y lo manda por SMTP. Nunca devuelve secretos ni el detalle de un error.
  */
-import { diaUtc, evaluar, leerConfig, redactar, rolDeJwt, type Correo } from './nucleo.ts'
+import { diaUtc, evaluar, leerConfig, redactar, redactarPrueba, rolDeJwt, type Correo } from './nucleo.ts'
 
 export interface Puertos {
   /** Fila única de configuración, o null si no existe. */
@@ -27,6 +27,16 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+/** Solo `{"prueba": true}` exacto activa la comprobación; un cuerpo vacío o inválido es el disparo normal. */
+async function esPrueba(req: Request): Promise<boolean> {
+  try {
+    const cuerpo = await req.json() as { prueba?: unknown }
+    return cuerpo?.prueba === true
+  } catch {
+    return false
+  }
+}
+
 export function crearHandler(p: Puertos) {
   return async (req: Request): Promise<Response> => {
     if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
@@ -39,6 +49,20 @@ export function crearHandler(p: Puertos) {
 
       const dia = diaUtc(p.ahora())
       const e = evaluar((await p.gastoCents(dia)) / 100, cfg)
+
+      // Comprobación del canal pedida explícitamente: envía un correo rotulado
+      // como prueba, sin reclamar ni marcar ningún nivel del día.
+      if (await esPrueba(req)) {
+        const probar = p.correo()
+        if (!probar) return json({ resultado: 'smtp_no_configurado' })
+        try {
+          await probar(cfg.destinatario, redactarPrueba(e, dia, p.panelUrl))
+        } catch {
+          return json({ resultado: 'fallo_envio', prueba: true })
+        }
+        return json({ resultado: 'prueba_enviada', nivel: e.nivel, pct: e.pct })
+      }
+
       if (e.nivel === 'ok') return json({ resultado: 'sin_alerta', nivel: e.nivel, pct: e.pct })
 
       const enviar = p.correo()
