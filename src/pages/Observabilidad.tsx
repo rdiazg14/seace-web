@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import SeguimientoContrato from '../features/seguimiento/components/SeguimientoContrato'
 import { useObservabilidad } from '../features/observabilidad/useObservabilidad'
+import { AvisoPresupuesto } from '../features/observabilidad/components/AvisoPresupuesto'
+import { avisoPresupuesto } from '../features/observabilidad/model'
 import { SeccionTrigger } from '../features/observabilidad/components/SeccionTrigger'
 import { SeccionConsumoIa } from '../features/observabilidad/components/SeccionConsumoIa'
 import { SeccionCupos } from '../features/observabilidad/components/SeccionCupos'
@@ -23,6 +25,8 @@ export default function Observabilidad() {
           </Link>
         </p>
       </div>
+
+      <AvisoPresupuesto aviso={avisoPresupuesto(o.stats)} />
 
       <SeccionTrigger
         stats={o.stats}

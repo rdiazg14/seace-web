@@ -58,6 +58,59 @@ export interface AdminStats {
     pipeline_trigger_last_ok: LastError | null
     pipeline_trigger_token_expira: TokenExpira | null
   }
+  /** GW-001: ausente si el proxy desplegado aún no lo informa. */
+  presupuesto?: unknown
+}
+
+export type NivelPresupuesto = 'sin_limite' | 'ok' | 'aviso' | 'critico' | 'agotado' | 'no_verificable'
+
+export interface AvisoPresupuesto {
+  nivel: NivelPresupuesto
+  tono: 'neutro' | 'ok' | 'warn' | 'error'
+  titulo: string
+  detalle: string
+}
+
+const NIVELES_PRESUPUESTO: NivelPresupuesto[] = ['sin_limite', 'ok', 'aviso', 'critico', 'agotado', 'no_verificable']
+
+function usd(n: number): string {
+  return `$${n.toFixed(n < 1 ? 4 : 2)}`
+}
+
+/**
+ * Traduce el bloque `presupuesto` de /admin/stats a un aviso legible. Valida la
+ * forma recibida: un campo ausente o inesperado no produce cifras inventadas.
+ * El gasto es la estimación del proxy, no la facturación del proveedor.
+ */
+export function avisoPresupuesto(stats: AdminStats | null): AvisoPresupuesto | null {
+  const p = stats?.presupuesto
+  if (!p || typeof p !== 'object') return null
+  const o = p as Record<string, unknown>
+  const nivel = NIVELES_PRESUPUESTO.find(n => n === o.nivel)
+  if (!nivel) return null
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null)
+  const gasto = num(o.gasto_usd)
+  const limite = num(o.limite_usd)
+  const pct = num(o.pct)
+  const cifra = gasto != null && limite != null
+    ? `Gasto estimado hoy (UTC): ${usd(gasto)} de ${usd(limite)}${pct != null ? ` (${pct} %)` : ''}.`
+    : gasto != null
+      ? `Gasto estimado hoy (UTC): ${usd(gasto)}.`
+      : 'No se pudo leer el gasto del día.'
+  switch (nivel) {
+    case 'sin_limite':
+      return { nivel, tono: 'neutro', titulo: 'Sin límite diario de gasto en IA', detalle: `${cifra} No hay tope configurado, así que no se generan alertas.` }
+    case 'ok':
+      return { nivel, tono: 'ok', titulo: 'Presupuesto de IA del día en rango', detalle: cifra }
+    case 'aviso':
+      return { nivel, tono: 'warn', titulo: 'Aviso: gasto de IA por encima del primer umbral', detalle: cifra }
+    case 'critico':
+      return { nivel, tono: 'error', titulo: 'Crítico: el presupuesto de IA del día está por agotarse', detalle: `${cifra} Al llegar al límite el chat, el análisis y la cotización se bloquean hasta mañana (UTC).` }
+    case 'agotado':
+      return { nivel, tono: 'error', titulo: 'Presupuesto de IA del día agotado', detalle: `${cifra} Las consultas de IA están bloqueadas hasta el cambio de día UTC.` }
+    case 'no_verificable':
+      return { nivel, tono: 'error', titulo: 'Presupuesto de IA no verificable', detalle: `${cifra} Con el límite activo, el proxy bloquea las consultas mientras no pueda verificarlo.` }
+  }
 }
 
 export const TRIGGER_STALE_MS = 36 * 60 * 60 * 1000
