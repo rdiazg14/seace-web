@@ -11,5 +11,5 @@
     "types": ["vitest/globals"],
     "paths": { "npm:@supabase/supabase-js@2": ["./node_modules/@supabase/supabase-js"] }
   },
-  "include": ["supabase/functions/config-ia/handler*.ts", "supabase/functions/config-ia/nucleo*.ts"]
+  "include": ["supabase/functions/config-ia/handler*.ts", "supabase/functions/config-ia/nucleo*.ts", "supabase/functions/alerta-presupuesto/handler.ts", "supabase/functions/alerta-presupuesto/nucleo.ts", "supabase/functions/alerta-presupuesto/alerta.test.ts"]
 }
