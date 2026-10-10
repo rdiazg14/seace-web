@@ -23,12 +23,57 @@ import {
 
 export const TAM_PAGINA_OPCIONES = [10, 20, 50, 100] as const
 
+// Universo + análisis recorren varias páginas; las lecturas pequeñas usan el plazo del perfil.
+export const PLAZO_UNIVERSO_MS = 45000
+export const PLAZO_LECTURA_MS = 15000
+
+/** Carga con transporte cancelable. `cerrar()` (cleanup del efecto) la vuelve
+ *  obsoleta: su resultado ya no debe tocar estado. Si vence el plazo sigue
+ *  siendo la carga actual y debe mostrar un error recuperable. */
+function iniciarCarga(plazoMs: number) {
+  const controller = new AbortController()
+  let obsoleta = false
+  let vencida = false
+  const timer = setTimeout(() => {
+    vencida = true
+    controller.abort()
+  }, plazoMs)
+  return {
+    signal: controller.signal,
+    exigirVigente: () => {
+      if (controller.signal.aborted) throw new DOMException('Carga cancelada', 'AbortError')
+    },
+    obsoleta: () => obsoleta,
+    vencida: () => vencida,
+    terminar: () => clearTimeout(timer),
+    cerrar: () => {
+      obsoleta = true
+      clearTimeout(timer)
+      controller.abort()
+    },
+  }
+}
+
+type OcultosCarga = {
+  userId: string | null
+  estado: 'cargando' | 'listo' | 'error'
+  ids: Set<number>
+}
+
+const SIN_OCULTOS: Set<number> = new Set()
+
 export function useRutaDia() {
   const { session } = useAuth()
+  // Identidad estable: un objeto session nuevo de la misma cuenta no recarga nada.
+  const userId = session?.user.id ?? null
   const [raw, setRaw] = useState<Contrato[]>([])
   const [analisisFilas, setAnalisisFilas] = useState<AnalisisFilaScore[]>([])
-  const [loading, setLoading] = useState(true)
+  const [cargandoUniverso, setCargandoUniverso] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [intentoUniverso, setIntentoUniverso] = useState(0)
+  const [intentoOcultos, setIntentoOcultos] = useState(0)
+  const [intentoPipeline, setIntentoPipeline] = useState(0)
+  const [pipelineError, setPipelineError] = useState(false)
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
   const [linea, setLinea] = useState<string | null>(null)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
@@ -36,7 +81,7 @@ export function useRutaDia() {
   const [paginaPost, setPaginaPost] = useState(1)
   const [paginaOtras, setPaginaOtras] = useState(1)
   const [tamPagina, setTamPagina] = useState(10)
-  const [ocultos, setOcultos] = useState<Set<number>>(new Set())
+  const [ocultosCarga, setOcultosCarga] = useState<OcultosCarga>({ userId: null, estado: 'listo', ids: SIN_OCULTOS })
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
@@ -51,77 +96,92 @@ export function useRutaDia() {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
+  // Informativo: su fallo se señala aparte y nunca bloquea la lista.
   useEffect(() => {
-    let cancelled = false
-    void cargarEstadoPipeline().then((fila) => {
-      if (!cancelled && fila) {
-        setActualizado(fila.ultima_corrida_utc ?? null)
-        setIngesta(fila.ultima_ingesta_utc ?? null)
-      }
-    })
-    return () => { cancelled = true }
-  }, [])
+    const carga = iniciarCarga(PLAZO_LECTURA_MS)
+    setPipelineError(false)
+    void cargarEstadoPipeline(carga.signal).then((fila) => {
+      carga.exigirVigente()
+      setActualizado(fila?.ultima_corrida_utc ?? null)
+      setIngesta(fila?.ultima_ingesta_utc ?? null)
+    }).catch(() => {
+      if (!carga.obsoleta()) setPipelineError(true)
+    }).finally(() => carga.terminar())
+    return () => carga.cerrar()
+  }, [intentoPipeline])
 
   useEffect(() => {
-    let cancelled = false
+    const carga = iniciarCarga(PLAZO_UNIVERSO_MS)
     async function load() {
-      setLoading(true)
+      setCargandoUniverso(true)
       setError(null)
       try {
-        const rows = await fetchUniverso()
-        // Ids del universo (Vigente + En Evaluación). Respuesta ≤ filas en analisis_contrato (~17).
-        const analisis = await fetchAnalisisScore(rows.map(c => c.id))
-        if (!cancelled) {
-          setRaw(rows)
-          setAnalisisFilas(analisis)
-        }
+        const rows = await fetchUniverso(carga.signal)
+        // Tras salir de la pantalla o vencer el plazo no se inicia el análisis.
+        carga.exigirVigente()
+        // Ids del universo (Vigente + En Evaluación).
+        const analisis = await fetchAnalisisScore(rows.map(c => c.id), carga.signal)
+        carga.exigirVigente()
+        setRaw(rows)
+        setAnalisisFilas(analisis)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'No se pudo cargar la ruta del día')
+        if (carga.obsoleta()) return
+        if (carga.vencida()) setError('La carga tardó demasiado. Reintenta en unos momentos.')
+        else setError(e instanceof Error ? e.message : 'No se pudo cargar la ruta del día')
       } finally {
-        if (!cancelled) setLoading(false)
+        carga.terminar()
+        if (!carga.obsoleta()) setCargandoUniverso(false)
       }
     }
     void load()
-    return () => { cancelled = true }
-  }, [])
+    return () => carga.cerrar()
+  }, [intentoUniverso])
 
   // Proyectos ocultos por el usuario actual.
   useEffect(() => {
-    const userId = session?.user.id
     if (!userId) return
-    let cancelled = false
-    void cargarOcultos(userId).then((ids) => {
-      if (!cancelled) setOcultos(ids)
+    const carga = iniciarCarga(PLAZO_LECTURA_MS)
+    setOcultosCarga({ userId, estado: 'cargando', ids: SIN_OCULTOS })
+    void cargarOcultos(userId, carga.signal).then((ids) => {
+      carga.exigirVigente()
+      setOcultosCarga({ userId, estado: 'listo', ids })
+    }).catch(() => {
+      // Se conservan los ids que el usuario haya marcado mientras tanto.
+      if (!carga.obsoleta()) setOcultosCarga(prev => prev.userId === userId ? { ...prev, estado: 'error' } : prev)
+    }).finally(() => carga.terminar())
+    return () => carga.cerrar()
+  }, [userId, intentoOcultos])
+
+  // Las preferencias de otra cuenta (o aún no pedidas) nunca se aplican a la actual.
+  const ocultosVigentes: OcultosCarga = !userId
+    ? { userId: null, estado: 'listo', ids: SIN_OCULTOS }
+    : ocultosCarga.userId === userId
+      ? ocultosCarga
+      : { userId, estado: 'cargando', ids: SIN_OCULTOS }
+  const ocultos = ocultosVigentes.ids
+  const loading = cargandoUniverso || ocultosVigentes.estado === 'cargando'
+
+  function mutarOcultos(dueno: string, cambio: (ids: Set<number>) => void) {
+    setOcultosCarga(prev => {
+      if (prev.userId !== dueno) return prev
+      const ids = new Set(prev.ids)
+      cambio(ids)
+      return { ...prev, ids }
     })
-    return () => { cancelled = true }
-  }, [session])
+  }
 
   async function ocultar(id: number) {
-    const userId = session?.user.id
     if (!userId) return
-    setOcultos(prev => new Set(prev).add(id))
+    mutarOcultos(userId, ids => ids.add(id))
     const ok = await ocultarContrato(userId, id)
-    if (!ok) {
-      setOcultos(prev => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-    }
+    if (!ok) mutarOcultos(userId, ids => ids.delete(id))
   }
 
   async function restaurar(id: number) {
-    const userId = session?.user.id
     if (!userId) return
-    setOcultos(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
+    mutarOcultos(userId, ids => ids.delete(id))
     const ok = await restaurarContrato(userId, id)
-    if (!ok) {
-      setOcultos(prev => new Set(prev).add(id))
-    }
+    if (!ok) mutarOcultos(userId, ids => ids.add(id))
   }
 
   function resetPaginas() {
@@ -174,6 +234,11 @@ export function useRutaDia() {
   return {
     loading,
     error,
+    recargar: () => setIntentoUniverso(n => n + 1),
+    ocultosError: ocultosVigentes.estado === 'error',
+    reintentarOcultos: () => setIntentoOcultos(n => n + 1),
+    pipelineError,
+    reintentarPipeline: () => setIntentoPipeline(n => n + 1),
     nivel,
     setNivel,
     linea,

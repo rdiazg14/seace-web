@@ -16,11 +16,17 @@ export type AnalisisFilaScore = {
   slice: AnalisisScoreSlice | null
 }
 
-export async function fetchUniverso(): Promise<Contrato[]> {
+/** Corta el trabajo dependiente cuando la carga ya fue cancelada o venció. */
+function exigirVigente(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException('Carga cancelada', 'AbortError')
+}
+
+export async function fetchUniverso(signal?: AbortSignal): Promise<Contrato[]> {
   const out: Contrato[] = []
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
+    exigirVigente(signal)
+    let q = supabase
       .from('v_contratos')
       .select(RUTA_DIA_COLS)
       .in('estado', ['Vigente', 'En Evaluación'])
@@ -29,6 +35,8 @@ export async function fetchUniverso(): Promise<Contrato[]> {
       // la pagina 2 puede repetir filas de la 1 y omitir otras.
       .order('id')
       .range(from, from + PAGE - 1)
+    if (signal) q = q.abortSignal(signal)
+    const { data, error } = await q
     if (error) throw error
     const batch = (data ?? []) as unknown as Contrato[]
     out.push(...batch)
@@ -46,18 +54,21 @@ export async function fetchUniverso(): Promise<Contrato[]> {
  * Los trozos van en paralelo (Promise.all), no secuenciales, para no
  * sumar latencia de red en cada página de la Ruta del día.
  */
-export async function fetchAnalisisScore(ids: number[]): Promise<AnalisisFilaScore[]> {
+export async function fetchAnalisisScore(ids: number[], signal?: AbortSignal): Promise<AnalisisFilaScore[]> {
   if (ids.length === 0) return []
+  exigirVigente(signal)
   const chunks: number[][] = []
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     chunks.push(ids.slice(i, i + ID_CHUNK))
   }
   const resultados = await Promise.all(
     chunks.map(async (chunk) => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('analisis_contrato')
         .select(ANALISIS_SCORE_SELECT)
         .in('contrato_id', chunk)
+      if (signal) q = q.abortSignal(signal)
+      const { data, error } = await q
       if (error) throw error
       return data ?? []
     }),
@@ -88,22 +99,27 @@ export interface EstadoPipeline {
   ultima_ingesta_utc: string | null
 }
 
-export async function cargarEstadoPipeline(): Promise<EstadoPipeline | null> {
-  const { data, error } = await supabase
+/** `null` = la tabla no tiene fila; un fallo de lectura se lanza, no se confunde con ausencia. */
+export async function cargarEstadoPipeline(signal?: AbortSignal): Promise<EstadoPipeline | null> {
+  let q = supabase
     .from('pipeline_estado')
     .select('ultima_corrida_utc, ultima_ingesta_utc')
     .limit(1)
-    .maybeSingle()
-  if (error) return null
+  if (signal) q = q.abortSignal(signal)
+  const { data, error } = await q.maybeSingle()
+  if (error) throw error
   return (data as EstadoPipeline | null) ?? null
 }
 
-export async function cargarOcultos(userId: string): Promise<Set<number>> {
-  const { data, error } = await supabase
+/** Conjunto vacío = el usuario no ocultó nada; un fallo de lectura se lanza. */
+export async function cargarOcultos(userId: string, signal?: AbortSignal): Promise<Set<number>> {
+  let q = supabase
     .from('ruta_ocultos')
     .select('contrato_id')
     .eq('user_id', userId)
-  if (error) return new Set()
+  if (signal) q = q.abortSignal(signal)
+  const { data, error } = await q
+  if (error) throw error
   return new Set((data ?? []).map(r => (r as { contrato_id: number }).contrato_id))
 }
 

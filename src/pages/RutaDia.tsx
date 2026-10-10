@@ -17,6 +17,11 @@ export default function RutaDia() {
   const {
     loading,
     error,
+    recargar,
+    ocultosError,
+    reintentarOcultos,
+    pipelineError,
+    reintentarPipeline,
     nivel,
     setNivel,
     linea,
@@ -73,14 +78,28 @@ export default function RutaDia() {
               Oportunidades ENERTRONIC · score con análisis cuando hay TDR
             </p>
           </div>
-          <div className="space-y-0.5 text-right">
-            <p className={toneCls(headerIng.tone)}>{headerIng.texto}</p>
-            <p className={toneCls(headerAct.tone)}>{headerAct.texto}</p>
-          </div>
+          {pipelineError ? (
+            <p className={`${toneCls('warn')} text-right`}>
+              No pudimos leer la última actualización.{' '}
+              <button type="button" onClick={reintentarPipeline} className="font-medium underline">
+                Reintentar
+              </button>
+            </p>
+          ) : (
+            <div className="space-y-0.5 text-right">
+              <p className={toneCls(headerIng.tone)}>{headerIng.texto}</p>
+              <p className={toneCls(headerAct.tone)}>{headerAct.texto}</p>
+            </div>
+          )}
         </div>
       </header>
 
-      {error && <ErrorBox retry={() => window.location.reload()}>{error}</ErrorBox>}
+      {error && <ErrorBox retry={recargar}>{error}</ErrorBox>}
+      {ocultosError && (
+        <ErrorBox retry={reintentarOcultos}>
+          No pudimos cargar tus proyectos ocultos; la lista puede incluir algunos que ya ocultaste.
+        </ErrorBox>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
