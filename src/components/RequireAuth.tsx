@@ -10,7 +10,7 @@ export function RequireAuth({
   children: ReactNode
   admin?: boolean
 }) {
-  const { session, perfil, loading } = useAuth()
+  const { session, perfil, loading, perfilError, retryPerfil } = useAuth()
   const loc = useLocation()
 
   if (loading) {
@@ -29,8 +29,8 @@ export function RequireAuth({
   if (!perfil) {
     return (
       <div className="mx-auto max-w-lg px-3 py-10">
-        <ErrorBox>
-          Tu cuenta no tiene perfil. Pídele al admin que revise la tabla perfiles o vuelve a entrar.
+        <ErrorBox retry={retryPerfil}>
+          {perfilError || 'Tu cuenta no tiene perfil habilitado. Contacta al administrador.'}
         </ErrorBox>
       </div>
     )
