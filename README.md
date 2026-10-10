@@ -9,9 +9,10 @@ npm ci
 npm run dev
 npm run build
 npm run lint
+npm test
 ```
 
-`npm run build` ejecuta TypeScript y genera `dist/`. El proyecto aún no tiene suite unitaria propia; esa brecha se gestiona como QA-002 en la documentación privada.
+`npm run build` ejecuta TypeScript y genera `dist/`. Vitest y Testing Library cubren reglas, componentes y flujos con dobles de servicios; no certifican backend real ni QA autenticada extremo a extremo.
 
 ## Despliegue
 
