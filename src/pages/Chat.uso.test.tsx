@@ -53,7 +53,34 @@ describe('Chat: total de tokens de una conversación guardada', () => {
     expect(screen.getByText('(estimado)')).toBeInTheDocument()
   })
 
-  it('la lista de conversaciones rotula su cifra como estimación del navegador', async () => {
+  it('lista sin la vista del servidor: cifra del navegador rotulada como estimación', async () => {
+    await abrirHistorial()
+    expect(await screen.findByText(/≈ 1,999,998 tokens/)).toBeInTheDocument()
+    expect(screen.getByText('(estimado)')).toBeInTheDocument()
+  })
+
+  it('lista con la vista del servidor: muestra el total verificado sin rótulo', async () => {
+    setTableData('v_chat_sesiones_uso', [{
+      sesion_id: 's1', tokens_prompt: 100, tokens_completion: 20, tokens_thoughts: 3, requests_verificados: 1, mensajes_solo_declarados: 0,
+    }])
+    await abrirHistorial()
+    expect(await screen.findByText('123 tokens')).toBeInTheDocument()
+    expect(screen.queryByText(/1,999,998/)).toBeNull()
+    expect(screen.queryByText('(estimado)')).toBeNull()
+  })
+
+  it('lista con respuestas sin registro del servidor: sigue siendo estimación', async () => {
+    setTableData('v_chat_sesiones_uso', [{
+      sesion_id: 's1', tokens_prompt: 100, tokens_completion: 20, tokens_thoughts: 0, requests_verificados: 1, mensajes_solo_declarados: 2,
+    }])
+    await abrirHistorial()
+    expect(await screen.findByText(/≈ 1,999,998 tokens/)).toBeInTheDocument()
+  })
+
+  it('una fila de la vista para otra sesión no altera esta', async () => {
+    setTableData('v_chat_sesiones_uso', [{
+      sesion_id: 'otra', tokens_prompt: 5, tokens_completion: 5, tokens_thoughts: 0, requests_verificados: 1, mensajes_solo_declarados: 0,
+    }])
     await abrirHistorial()
     expect(await screen.findByText(/≈ 1,999,998 tokens/)).toBeInTheDocument()
   })

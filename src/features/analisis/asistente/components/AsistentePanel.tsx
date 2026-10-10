@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, History, Loader2, MessageCircle, Trash2, X } from 'lucide-react'
 import { MarkdownRenderer } from '../../../../components/MarkdownRenderer'
+import { TokensSesion } from '../../../../components/TokensSesion'
 import { useAuth } from '../../../../lib/auth'
 import { CHIPS_ESCENARIO, fmtCostoUsd, fmtUsd, labelModelo } from '../model'
 import { useAsistente } from '../useAsistente'
@@ -197,10 +198,7 @@ export function AsistentePanel({
                   >
                     <p className="truncate text-sm text-[var(--text-primary)]">{s.titulo}</p>
                     <p className="text-[11px] text-[var(--text-secondary)]">
-                      {s.n_mensajes} msgs ·{' '}
-                      <span title="Estimado guardado por el navegador; el total registrado por el servidor se muestra al abrir la consulta">
-                        ≈ {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens
-                      </span>
+                      {s.n_mensajes} msgs · <TokensSesion s={s} />
                     </p>
                   </button>
                   <button

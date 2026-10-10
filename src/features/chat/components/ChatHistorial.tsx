@@ -1,3 +1,4 @@
+import { TokensSesion } from '../../../components/TokensSesion'
 import type { SesionChat } from '../../../lib/chatSesiones'
 import { hace } from '../model'
 
@@ -33,11 +34,7 @@ export function ChatHistorial({
             >
               <p className="truncate text-sm text-[var(--text-primary)]">{s.titulo}</p>
               <p className="text-[11px] text-[var(--text-secondary)]">
-                {s.n_mensajes} msgs ·{' '}
-                <span title="Estimado guardado por el navegador; el total registrado por el servidor se muestra al abrir la conversación">
-                  ≈ {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens
-                </span>
-                {' '}· {hace(s.updated_at)}
+                {s.n_mensajes} msgs · <TokensSesion s={s} /> · {hace(s.updated_at)}
               </p>
             </button>
             <button
