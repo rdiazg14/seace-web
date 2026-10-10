@@ -2,7 +2,7 @@
  *  el conteo del servidor, señal de cancelación propagada, lecturas incompletas
  *  declaradas y errores que ya no se disfrazan de ausencia. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_FILAS, cargarEstadoPipeline, cargarOcultos, fetchAnalisisScore, fetchUniverso } from './api'
+import { MAX_FILAS, cargarEstadoPipeline, cargarOcultos, fetchAnalisisScore, fetchUniverso, ocultarContrato, restaurarContrato } from './api'
 
 const m = vi.hoisted(() => ({ from: vi.fn() }))
 vi.mock('../../lib/supabase', () => ({ supabase: { from: m.from } }))
@@ -171,6 +171,40 @@ describe('fetchAnalisisScore', () => {
   it('propaga el error de un lote', async () => {
     m.from.mockReturnValue(query({ data: null, error: fallo }))
     await expect(fetchAnalisisScore([1])).rejects.toBe(fallo)
+  })
+})
+
+describe('escritura de ocultos (UX-004)', () => {
+  function escritura(error: unknown) {
+    const q = query({ data: null, error })
+    q.insert = vi.fn(() => q)
+    q.delete = vi.fn(() => q)
+    m.from.mockReturnValue(q)
+    return q
+  }
+
+  it('ocultar: éxito, fallo y reintento sobre uno ya oculto (clave duplicada = éxito)', async () => {
+    escritura(null)
+    expect(await ocultarContrato('user-a', 5)).toBe(true)
+    escritura({ code: '42501', message: 'rls' })
+    expect(await ocultarContrato('user-a', 5)).toBe(false)
+    escritura({ code: '23505', message: 'duplicate key' })
+    expect(await ocultarContrato('user-a', 5)).toBe(true)
+  })
+
+  it('ocultar y restaurar escriben solo la fila de la cuenta y pasan la señal', async () => {
+    const { signal } = new AbortController()
+    const ins = escritura(null)
+    await ocultarContrato('user-a', 5, signal)
+    expect(ins.insert).toHaveBeenCalledWith({ user_id: 'user-a', contrato_id: 5 })
+    expect(ins.abortSignal).toHaveBeenCalledWith(signal)
+
+    const del = escritura(null)
+    expect(await restaurarContrato('user-a', 5, signal)).toBe(true)
+    expect(del.eq.mock.calls).toEqual([['user_id', 'user-a'], ['contrato_id', 5]])
+    expect(del.abortSignal).toHaveBeenCalledWith(signal)
+    escritura({ message: 'boom' })
+    expect(await restaurarContrato('user-a', 5)).toBe(false)
   })
 })
 

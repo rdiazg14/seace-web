@@ -20,6 +20,7 @@ export default function RutaDia() {
     recargar,
     ocultosError,
     reintentarOcultos,
+    accionOcultosError,
     pipelineError,
     reintentarPipeline,
     universoIncompleto,
@@ -102,6 +103,7 @@ export default function RutaDia() {
           No pudimos cargar tus proyectos ocultos; la lista puede incluir algunos que ya ocultaste.
         </ErrorBox>
       )}
+      {accionOcultosError && <ErrorBox>{accionOcultosError}</ErrorBox>}
       {universoIncompleto && (
         <ErrorBox retry={recargar}>
           Lista incompleta: se cargaron {universoIncompleto.cargados.toLocaleString('es-PE')}

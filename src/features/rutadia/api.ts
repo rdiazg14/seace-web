@@ -160,12 +160,23 @@ export async function cargarOcultos(userId: string, signal?: AbortSignal): Promi
   return new Set(filas.map(r => r.contrato_id))
 }
 
-export async function ocultarContrato(userId: string, contratoId: number): Promise<boolean> {
-  const { error } = await supabase.from('ruta_ocultos').insert({ user_id: userId, contrato_id: contratoId })
-  return !error
+const PG_UNIQUE_VIOLATION = '23505'
+
+/**
+ * true = el contrato quedó oculto. Repetir un ocultar ya aplicado choca con la
+ * clave (user_id, contrato_id) y cuenta como éxito: un reintento no duplica ni
+ * revierte lo que ya está guardado.
+ */
+export async function ocultarContrato(userId: string, contratoId: number, signal?: AbortSignal): Promise<boolean> {
+  let q = supabase.from('ruta_ocultos').insert({ user_id: userId, contrato_id: contratoId })
+  if (signal) q = q.abortSignal(signal)
+  const { error } = await q
+  return !error || (error as { code?: string }).code === PG_UNIQUE_VIOLATION
 }
 
-export async function restaurarContrato(userId: string, contratoId: number): Promise<boolean> {
-  const { error } = await supabase.from('ruta_ocultos').delete().eq('user_id', userId).eq('contrato_id', contratoId)
+export async function restaurarContrato(userId: string, contratoId: number, signal?: AbortSignal): Promise<boolean> {
+  let q = supabase.from('ruta_ocultos').delete().eq('user_id', userId).eq('contrato_id', contratoId)
+  if (signal) q = q.abortSignal(signal)
+  const { error } = await q
   return !error
 }

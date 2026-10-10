@@ -88,6 +88,8 @@ export function useRutaDia() {
   const [paginaOtras, setPaginaOtras] = useState(1)
   const [tamPagina, setTamPagina] = useState(10)
   const [ocultosCarga, setOcultosCarga] = useState<OcultosCarga>({ userId: null, estado: 'listo', ids: SIN_OCULTOS })
+  // Fallo de la última escritura de ocultos, atado a la cuenta que la hizo.
+  const [accionError, setAccionError] = useState<{ userId: string; texto: string } | null>(null)
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
   const [detalleId, setDetalleId] = useState<number | null>(null)
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
@@ -191,18 +193,37 @@ export function useRutaDia() {
     })
   }
 
+  /** Escritura con plazo: un fallo, un corte o una espera excesiva devuelven false. */
+  async function escribir(operacion: (signal: AbortSignal) => Promise<boolean>): Promise<boolean> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PLAZO_LECTURA_MS)
+    try {
+      return await operacion(controller.signal)
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   async function ocultar(id: number) {
     if (!userId) return
-    mutarOcultos(userId, ids => ids.add(id))
-    const ok = await ocultarContrato(userId, id)
-    if (!ok) mutarOcultos(userId, ids => ids.delete(id))
+    const dueno = userId
+    setAccionError(null)
+    mutarOcultos(dueno, ids => ids.add(id))
+    if (await escribir(signal => ocultarContrato(dueno, id, signal))) return
+    mutarOcultos(dueno, ids => ids.delete(id))
+    setAccionError({ userId: dueno, texto: 'No pudimos ocultar el proyecto; sigue visible. Inténtalo de nuevo.' })
   }
 
   async function restaurar(id: number) {
     if (!userId) return
-    mutarOcultos(userId, ids => ids.delete(id))
-    const ok = await restaurarContrato(userId, id)
-    if (!ok) mutarOcultos(userId, ids => ids.add(id))
+    const dueno = userId
+    setAccionError(null)
+    mutarOcultos(dueno, ids => ids.delete(id))
+    if (await escribir(signal => restaurarContrato(dueno, id, signal))) return
+    mutarOcultos(dueno, ids => ids.add(id))
+    setAccionError({ userId: dueno, texto: 'No pudimos restaurar el proyecto; sigue oculto. Inténtalo de nuevo.' })
   }
 
   function resetPaginas() {
@@ -258,6 +279,7 @@ export function useRutaDia() {
     recargar: () => setIntentoUniverso(n => n + 1),
     ocultosError: ocultosVigentes.estado === 'error',
     reintentarOcultos: () => setIntentoOcultos(n => n + 1),
+    accionOcultosError: accionError && accionError.userId === userId ? accionError.texto : null,
     pipelineError,
     reintentarPipeline: () => setIntentoPipeline(n => n + 1),
     universoIncompleto,

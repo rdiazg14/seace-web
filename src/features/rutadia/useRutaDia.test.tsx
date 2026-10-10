@@ -276,6 +276,65 @@ describe('pipeline informativo', () => {
   })
 })
 
+describe('escritura de ocultos (UX-004)', () => {
+  it('ocultar que falla: se revierte y deja un aviso; el siguiente intento lo limpia', async () => {
+    m.universo.mockResolvedValue([postulable(1)])
+    m.ocultar.mockResolvedValueOnce(false)
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => { await result.current.ocultar(1) })
+    expect(result.current.ocultos.has(1)).toBe(false)
+    expect(result.current.accionOcultosError).toMatch(/No pudimos ocultar/)
+
+    await act(async () => { await result.current.ocultar(1) })
+    expect(result.current.ocultos.has(1)).toBe(true)
+    expect(result.current.accionOcultosError).toBeNull()
+  })
+
+  it('restaurar que lanza: el proyecto sigue oculto y se avisa', async () => {
+    m.ocultos.mockResolvedValue(new Set([4]))
+    m.restaurar.mockRejectedValueOnce(new Error('red'))
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.restaurar(4) })
+    expect(result.current.ocultos.has(4)).toBe(true)
+    expect(result.current.accionOcultosError).toMatch(/sigue oculto/)
+  })
+
+  it('escritura sin respuesta: vence por plazo, aborta el transporte y revierte', async () => {
+    vi.useFakeTimers()
+    m.ocultar.mockImplementationOnce((_u: string, _id: number, signal: AbortSignal) => new Promise((_res, rej) => {
+      signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')))
+    }))
+    const { result } = renderHook(useRutaDia)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    act(() => { void result.current.ocultar(9) })
+    expect(result.current.ocultos.has(9)).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(PLAZO_LECTURA_MS) })
+    expect(result.current.ocultos.has(9)).toBe(false)
+    expect(result.current.accionOcultosError).toMatch(/No pudimos ocultar/)
+  })
+
+  it('el aviso de una cuenta no se muestra a otra', async () => {
+    m.ocultar.mockResolvedValueOnce(false)
+    const { result, rerender } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.ocultar(1) })
+    expect(result.current.accionOcultosError).not.toBeNull()
+    m.auth.session = { user: { id: 'user-b' } }
+    rerender()
+    expect(result.current.accionOcultosError).toBeNull()
+  })
+
+  it('la escritura lleva la cuenta que la inició y una señal de cancelación', async () => {
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.ocultar(3) })
+    expect(m.ocultar).toHaveBeenCalledWith('user-a', 3, expect.any(AbortSignal))
+  })
+})
+
 describe('integridad y frescura', () => {
   it('lectura incompleta del universo se declara con cargados y total', async () => {
     m.universo.mockResolvedValue({ filas: [postulable(1)], completo: false, total: 25000 })
