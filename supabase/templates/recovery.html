@@ -1,0 +1,25 @@
+<div style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.5; color: #1e293b; max-width: 520px;">
+  <p style="font-size: 17px; font-weight: bold; color: #0f766e; margin: 0 0 16px;">SEACE Monitor</p>
+
+  <p>Hola,</p>
+
+  <p>Recibimos una solicitud para restablecer la clave de la cuenta <strong>{{ .Email }}</strong>.</p>
+
+  <p>Para crear una nueva clave, abre este enlace:</p>
+
+  <p style="margin: 20px 0;">
+    <a href="{{ .ConfirmationURL }}"
+       style="background: #0d9488; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-weight: bold;">
+      Crear una nueva clave
+    </a>
+  </p>
+
+  <p>Si el botón no funciona, copia y pega esta dirección en tu navegador:</p>
+  <p style="word-break: break-all; font-size: 13px; color: #475569;">{{ .ConfirmationURL }}</p>
+
+  <p>El enlace es de un solo uso y vence pronto. Si no pediste este cambio, puedes ignorar este mensaje: tu clave actual seguirá funcionando.</p>
+
+  <p style="margin-top: 24px; font-size: 13px; color: #64748b;">
+    Este es un mensaje automático de SEACE Monitor. Nadie del equipo te pedirá tu clave por correo.
+  </p>
+</div>

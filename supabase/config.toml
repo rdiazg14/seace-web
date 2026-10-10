@@ -14,3 +14,8 @@ verify_jwt = true
 
 [functions.alerta-presupuesto]
 verify_jwt = true
+
+# OPS-004: correo de recuperacion de clave en espanol.
+[auth.email.template.recovery]
+subject = "Restablece tu clave de SEACE Monitor"
+content_path = "./supabase/templates/recovery.html"
