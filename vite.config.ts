@@ -20,5 +20,8 @@ export default defineConfig({
   test: {
     // Requerido para que @testing-library/react registre cleanup automático.
     globals: true,
+    // Con la máquina cargada el arranque de jsdom consume la mayor parte del
+    // tiempo de una prueba DOM; 5 s por defecto dio un fallo intermitente.
+    testTimeout: 15000,
   },
 })

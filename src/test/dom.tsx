@@ -2,13 +2,17 @@
  *  archivo con `// @vitest-environment jsdom`). Importar este módulo aplica los
  *  stubs de APIs del navegador que jsdom no implementa y registra jest-dom. */
 import '@testing-library/jest-dom/vitest'
-import { render } from '@testing-library/react'
+import { configure, render } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 import type { Session } from '@supabase/supabase-js'
 import { ThemeProvider } from '../lib/theme'
 import type { Perfil } from '../types'
+
+// findBy*/waitFor esperan 1 s por defecto; con la máquina cargada no alcanza.
+// Solo alarga la espera antes de fallar: no cambia qué se considera correcto.
+configure({ asyncUtilTimeout: 4000 })
 
 if (typeof window !== 'undefined') {
   if (!('ResizeObserver' in globalThis)) {
