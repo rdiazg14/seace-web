@@ -151,6 +151,11 @@ export function ChatMensaje({
             </button>
           </div>
         )}
+        {m.role === 'bot' && m.error && m.requestId && (
+          <p className="mt-1 text-[10px] text-slate-400">
+            Referencia para soporte: <span className="select-all font-mono">{m.requestId}</span>
+          </p>
+        )}
       </div>
     </div>
   )

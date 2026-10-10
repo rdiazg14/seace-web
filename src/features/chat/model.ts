@@ -147,11 +147,21 @@ export function mensajeHttpFallido(status: number, data: ErrorProxy, query: stri
     || data.error === 'rate_limited'
     || data.error === 'daily_limited'
     || data.error === 'over_capacity'
-  return { role: 'bot', text: mensajeLimite(status, data), error: !isLimit, limit: isLimit, query }
+  return { role: 'bot', text: mensajeLimite(status, data), error: !isLimit, limit: isLimit, query, requestId: requestIdDe(data.request_id) }
 }
 
-/** Mensaje del bot ante fallo de red o cancelación. */
-export function mensajeConexionFallida(abortado: boolean, query: string): ChatMsg {
+/** Fallo informado por el proxy dentro del stream; conserva el id del request si vino. */
+export class ErrorChat extends Error {
+  readonly requestId?: string
+  constructor(message: string, requestId?: string) {
+    super(message)
+    this.name = 'ErrorChat'
+    this.requestId = requestId
+  }
+}
+
+/** Mensaje del bot ante fallo de red, cancelación o error del proxy (con su id si lo informó). */
+export function mensajeConexionFallida(abortado: boolean, query: string, requestId?: string): ChatMsg {
   return {
     role: 'bot',
     text: abortado
@@ -159,6 +169,7 @@ export function mensajeConexionFallida(abortado: boolean, query: string): ChatMs
       : 'No pude consultar la IA ahora. Prueba de nuevo o usa el buscador.',
     error: true,
     query,
+    requestId,
   }
 }
 
@@ -200,7 +211,7 @@ export function aplicarEventoChat(
   s: StreamChat,
   ev: EventoChat,
   query: string,
-): { s: StreamChat; patch: Partial<ChatMsg> | null; error: string | null } {
+): { s: StreamChat; patch: Partial<ChatMsg> | null; error: string | null; requestId?: string } {
   if (ev.stage === 'searching') {
     return { s, patch: { stage: ev.message || 'Buscando en los TDR…', query }, error: null }
   }
@@ -233,7 +244,7 @@ export function aplicarEventoChat(
       error: null,
     }
   }
-  if (ev.stage === 'error') return { s, patch: null, error: ev.message || 'error SSE' }
+  if (ev.stage === 'error') return { s, patch: null, error: ev.message || 'error SSE', requestId: requestIdDe(ev.request_id) }
   return { s, patch: null, error: null }
 }
 

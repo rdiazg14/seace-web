@@ -2,7 +2,7 @@
  *  degradación a "declarado" cuando el servidor no tiene fila o la lectura falla. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { agruparUso, cargarUsoVerificado, requestIdValido } from './usoVerificado'
-import { aplicarUsoVerificado, mensajeDesdeJson, mensajeDesdeStream, STREAM_INICIAL, aplicarEventoChat, totalesDe, type ChatMsg } from '../features/chat/model'
+import { aplicarUsoVerificado, ErrorChat, mensajeConexionFallida, mensajeDesdeJson, mensajeDesdeStream, mensajeHttpFallido, STREAM_INICIAL, aplicarEventoChat, totalesDe, type ChatMsg } from '../features/chat/model'
 import { aplicarUsoVerificadoEscena, type EscenaMsg } from '../features/analisis/asistente/model'
 
 const m = vi.hoisted(() => ({ from: vi.fn() }))
@@ -120,6 +120,15 @@ describe('chat general: declarado frente a verificado', () => {
     expect(json).toMatchObject({ requestId: 'req-00000001', verificado: true })
     const { s } = aplicarEventoChat(STREAM_INICIAL, { stage: 'done', usage: { prompt: 5, completion: 1 }, request_id: 'req-00000002' }, 'q')
     expect(mensajeDesdeStream(s, [], 'q')).toMatchObject({ requestId: 'req-00000002', verificado: true })
+  })
+
+  it('GW-009: los errores conservan el request_id del proxy para soporte', () => {
+    const sse = aplicarEventoChat(STREAM_INICIAL, { stage: 'error', message: 'fallo', request_id: 'req-00000003' }, 'q')
+    expect([sse.error, sse.requestId]).toEqual(['fallo', 'req-00000003'])
+    expect(mensajeConexionFallida(false, 'q', sse.requestId)).toMatchObject({ error: true, requestId: 'req-00000003' })
+    expect(mensajeHttpFallido(503, { error: 'plazo_agotado', request_id: 'req-00000004' }, 'q').requestId).toBe('req-00000004')
+    expect(mensajeHttpFallido(500, { request_id: 'texto libre' }, 'q').requestId).toBeUndefined()
+    expect(new ErrorChat('x', 'req-00000005').requestId).toBe('req-00000005')
   })
 
   it('un proxy antiguo sin request_id deja la respuesta como no verificada', () => {

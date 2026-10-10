@@ -20,6 +20,7 @@ import {
   aplicarEventoChat,
   aplicarUsoVerificado,
   buildChatHistory,
+  ErrorChat,
   mensajeConexionFallida,
   mensajeDesdeJson,
   mensajeDesdeStream,
@@ -127,7 +128,7 @@ export function useChat(userId: string | null) {
     let s = STREAM_INICIAL
     for await (const ev of eventosSse(res)) {
       const r = aplicarEventoChat(s, ev as EventoChat, query)
-      if (r.error) throw new Error(r.error)
+      if (r.error) throw new ErrorChat(r.error, r.requestId)
       s = r.s
       if (r.patch) patchLast(r.patch)
     }
@@ -186,7 +187,7 @@ export function useChat(userId: string | null) {
           : await consumeJson(res, q)
       }
     } catch (err) {
-      bot = mensajeConexionFallida((err as Error).name === 'AbortError', q)
+      bot = mensajeConexionFallida((err as Error).name === 'AbortError', q, err instanceof ErrorChat ? err.requestId : undefined)
       patchLast(bot)
     } finally {
       setLoading(false)
