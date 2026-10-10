@@ -5,7 +5,7 @@ import '../../test/dom'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AvisoPresupuesto } from './components/AvisoPresupuesto'
-import { avisoPresupuesto, type AdminStats } from './model'
+import { avisoPresupuesto, resumenFallidas, type AdminStats } from './model'
 
 afterEach(cleanup)
 
@@ -50,6 +50,21 @@ describe('avisoPresupuesto', () => {
   it('valores no numéricos o negativos se tratan como desconocidos', () => {
     const a = avisoPresupuesto(stats(bloque({ nivel: 'aviso', gasto_usd: '1', limite_usd: -5, pct: 'x' })))!
     expect(a.detalle).toBe('No se pudo leer el gasto del día.')
+  })
+})
+
+describe('resumenFallidas (FIX-021)', () => {
+  it('muestra cantidad y porcentaje sobre los intentos', () => {
+    expect(resumenFallidas({ llamadas: 97, fallidas: 3 })).toBe('3 fallidas (3 % de los intentos)')
+    expect(resumenFallidas({ llamadas: 2, fallidas: 1 })).toBe('1 fallida (33.3 % de los intentos)')
+    expect(resumenFallidas({ llamadas: 0, fallidas: 4 })).toBe('4 fallidas (100 % de los intentos)')
+  })
+
+  it('cero medido se dice; sin dato de la BD no se afirma nada', () => {
+    expect(resumenFallidas({ llamadas: 10, fallidas: 0 })).toBe('sin solicitudes fallidas')
+    expect(resumenFallidas({ llamadas: 10 })).toBeNull()
+    expect(resumenFallidas({ llamadas: 10, fallidas: 'x' })).toBeNull()
+    expect(resumenFallidas({ llamadas: 10, fallidas: -1 })).toBeNull()
   })
 })
 

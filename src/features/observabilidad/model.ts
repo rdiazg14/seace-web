@@ -113,6 +113,20 @@ export function avisoPresupuesto(stats: AdminStats | null): AvisoPresupuesto | n
   }
 }
 
+/**
+ * Texto de requests fallidos junto al total de llamadas (FIX-021). null cuando
+ * la función de estadísticas todavía no separa los fallos: no se muestra un
+ * "0 fallidas" que nadie midió.
+ */
+export function resumenFallidas(total: { llamadas: number; fallidas?: unknown }): string | null {
+  const f = total.fallidas
+  if (typeof f !== 'number' || !Number.isFinite(f) || f < 0) return null
+  if (f === 0) return 'sin solicitudes fallidas'
+  const intentos = total.llamadas + f
+  const pct = intentos > 0 ? Math.round((f / intentos) * 1000) / 10 : 0
+  return `${f.toLocaleString('es-PE')} fallida${f === 1 ? '' : 's'} (${pct} % de los intentos)`
+}
+
 export const TRIGGER_STALE_MS = 36 * 60 * 60 * 1000
 
 /** Respuesta de fn_uso_ia_stats(): traza unificada de consumo por componente. */
@@ -121,6 +135,8 @@ export interface UsoIaStats {
   hasta: string
   total: {
     llamadas: number
+    /** FIX-021: requests que no terminaron bien; ausente si la BD aún no lo informa. */
+    fallidas?: number
     tokens_prompt: number
     tokens_completion: number
     tokens_cached: number

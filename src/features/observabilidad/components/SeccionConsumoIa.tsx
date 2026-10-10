@@ -12,6 +12,7 @@ import {
   fmtUsd,
   isoDiasAtras,
   localIso,
+  resumenFallidas,
   type BarraComponente,
   type PuntoDonut,
   type TipoRespuesta,
@@ -147,6 +148,9 @@ export function SeccionConsumoIa({
             <p className="font-medium">Llamadas</p>
             <p className="mt-2 text-2xl tabular-nums">{fmtNum(uso.total.llamadas)}</p>
             <p className="mt-1 text-xs text-slate-500">{uso.desde} → {uso.hasta}</p>
+            {resumenFallidas(uso.total) && (
+              <p className="mt-1 text-xs text-slate-500">{resumenFallidas(uso.total)}</p>
+            )}
           </div>
           <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-800">
             <p className="font-medium">Tokens totales</p>
