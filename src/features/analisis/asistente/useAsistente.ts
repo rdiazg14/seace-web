@@ -14,9 +14,11 @@ import {
   listarSesionesContrato,
   type SesionChat,
 } from '../../../lib/chatSesiones'
+import { cargarUsoVerificado } from '../../../lib/usoVerificado'
 import { consultarCotizar } from './api'
 import {
   aplicarEventoCotizar,
+  aplicarUsoVerificadoEscena,
   buildEscenaHistory,
   costoUsd,
   escenarioListo,
@@ -79,8 +81,10 @@ export function useAsistente(userId: string | null, contratoId: number) {
     setHistorialAbierto(false)
     setInput('')
     try {
-      const rows = await cargarMensajes(s.id)
-      setMessages(rows.map(msgDesdeFila))
+      const msgs = (await cargarMensajes(s.id)).map(msgDesdeFila)
+      // El payload guardado es copia del navegador; manda lo registrado en uso_ia (SEC-006).
+      const uso = await cargarUsoVerificado(msgs.map(m => m.requestId))
+      setMessages(aplicarUsoVerificadoEscena(msgs, uso))
     } catch (e) {
       console.error('abrir sesion contrato', e)
       setMessages([])

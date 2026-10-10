@@ -15,26 +15,27 @@ import {
 } from '../../lib/chatSesiones'
 import { eventosSse } from '../../lib/sse'
 import { cargarContratosCitados, consultarChat } from './api'
+import { cargarUsoVerificado } from '../../lib/usoVerificado'
 import {
   aplicarEventoChat,
+  aplicarUsoVerificado,
   buildChatHistory,
   mensajeConexionFallida,
   mensajeDesdeJson,
   mensajeDesdeStream,
   mensajeHttpFallido,
   STREAM_INICIAL,
+  totalesDe,
   type ChatMsg,
   type ErrorProxy,
   type EventoChat,
   type RespuestaJson,
-  type Uso,
 } from './model'
 
 export function useChat(userId: string | null) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [sesiones, setSesiones] = useState<SesionChat[]>([])
   const [sesionId, setSesionId] = useState<string | null>(null)
-  const [totales, setTotales] = useState<Uso>({ prompt: 0, completion: 0 })
   const [cargandoSesion, setCargandoSesion] = useState(false)
   const [loading, setLoading] = useState(false)
   const [input, setInput] = useState('')
@@ -67,7 +68,6 @@ export function useChat(userId: string | null) {
   async function abrirSesion(s: SesionChat) {
     setCargandoSesion(true)
     setSesionId(s.id)
-    setTotales({ prompt: s.tokens_prompt, completion: s.tokens_completion })
     setInput('')
     try {
       const rows = await cargarMensajes(s.id)
@@ -75,6 +75,7 @@ export function useChat(userId: string | null) {
       for (const m of rows) {
         const refs = m.refs ?? undefined
         const contratos = refs?.length ? await cargarContratosCitados(refs) : undefined
+        const requestId = m.payload?.request_id
         msgs.push({
           role: m.rol,
           text: m.texto,
@@ -84,9 +85,13 @@ export function useChat(userId: string | null) {
           limit: m.limit_flag,
           tokens_prompt: m.tokens_prompt,
           tokens_completion: m.tokens_completion,
+          requestId: typeof requestId === 'string' ? requestId : undefined,
         })
       }
-      setMessages(msgs)
+      // Los tokens guardados por el navegador son una copia: manda lo que el
+      // servidor registró en uso_ia para cada request (SEC-006).
+      const uso = await cargarUsoVerificado(msgs.map(m => m.requestId))
+      setMessages(aplicarUsoVerificado(msgs, uso))
     } catch (e) {
       console.error('abrir sesion', e)
     } finally {
@@ -98,7 +103,6 @@ export function useChat(userId: string | null) {
     abortRef.current?.abort()
     setSesionId(null)
     setMessages([])
-    setTotales({ prompt: 0, completion: 0 })
     setInput('')
   }
 
@@ -147,7 +151,6 @@ export function useChat(userId: string | null) {
         const s = await crearSesion(userId, q.slice(0, 40))
         sid = s.id
         setSesionId(s.id)
-        setTotales({ prompt: 0, completion: 0 })
       } catch (e) {
         console.error('crear sesion', e)
       }
@@ -190,8 +193,9 @@ export function useChat(userId: string | null) {
     }
 
     if (sid && bot) {
-      const np = totales.prompt + (bot.tokens_prompt ?? 0)
-      const nc = totales.completion + (bot.tokens_completion ?? 0)
+      const previos = totalesDe(messages)
+      const np = previos.prompt + (bot.tokens_prompt ?? 0)
+      const nc = previos.completion + (bot.tokens_completion ?? 0)
       const n = messages.length + 2
       try {
         await guardarMensaje({
@@ -204,8 +208,10 @@ export function useChat(userId: string | null) {
           tokens_completion: bot.tokens_completion ?? 0,
           error: bot.error ?? false,
           limit_flag: bot.limit ?? false,
+          // El id une el mensaje con las filas uso_ia del servidor; los tokens
+          // de arriba son copia declarada para la lista y sesiones antiguas.
+          payload: bot.requestId ? { request_id: bot.requestId } : null,
         })
-        setTotales({ prompt: np, completion: nc })
         await actualizarSesion(sid, { tokens_prompt: np, tokens_completion: nc, n_mensajes: n })
         void refrescarSesiones()
       } catch (e) {
@@ -218,7 +224,7 @@ export function useChat(userId: string | null) {
     messages,
     sesiones,
     sesionId,
-    totales,
+    totales: totalesDe(messages),
     cargandoSesion,
     loading,
     input,

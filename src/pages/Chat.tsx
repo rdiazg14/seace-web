@@ -70,8 +70,14 @@ export default function Chat() {
           Historial ({chat.sesiones.length})
         </button>
         <div className="ml-auto flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-          <span className="rounded-full border border-[var(--border)] px-2 py-0.5">
-            Tokens: {totalTokens.toLocaleString('es-PE')}
+          <span
+            className="rounded-full border border-[var(--border)] px-2 py-0.5"
+            title={chat.totales.verificado
+              ? 'Tokens registrados por el servidor'
+              : 'Incluye mensajes sin registro del servidor: total estimado'}
+          >
+            Tokens: {chat.totales.verificado ? '' : '≈ '}{totalTokens.toLocaleString('es-PE')}
+            {!chat.totales.verificado && <span className="sr-only"> (estimado)</span>}
           </span>
           <span className="hidden rounded-full border border-[var(--border)] px-2 py-0.5 sm:inline">
             Contexto: {lastPrompt.toLocaleString('es-PE')} / 1M ({contextoPct}%)

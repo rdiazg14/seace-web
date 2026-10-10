@@ -197,7 +197,10 @@ export function AsistentePanel({
                   >
                     <p className="truncate text-sm text-[var(--text-primary)]">{s.titulo}</p>
                     <p className="text-[11px] text-[var(--text-secondary)]">
-                      {s.n_mensajes} msgs · {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens
+                      {s.n_mensajes} msgs ·{' '}
+                      <span title="Estimado guardado por el navegador; el total registrado por el servidor se muestra al abrir la consulta">
+                        ≈ {(s.tokens_prompt + s.tokens_completion).toLocaleString('es-PE')} tokens
+                      </span>
                     </p>
                   </button>
                   <button

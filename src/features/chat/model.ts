@@ -43,6 +43,10 @@ export interface ChatMsg {
   query?: string
   tokens_prompt?: number
   tokens_completion?: number
+  /** Clave de las filas `uso_ia` que el servidor escribió para esta respuesta (SEC-006). */
+  requestId?: string
+  /** true: tokens del servidor (respuesta en vivo o `uso_ia`); false: copia guardada por el navegador. */
+  verificado?: boolean
 }
 
 /** Cuerpo de error del proxy (límites, fallos). */
@@ -50,6 +54,7 @@ export interface ErrorProxy {
   respuesta?: string
   response?: string
   error?: string
+  request_id?: string
 }
 
 /** Respuesta JSON del proxy (sin SSE). */
@@ -68,6 +73,43 @@ export interface EventoChat {
   contratos_referenciados?: ContratoRef[]
   usage?: Uso
   web_sources?: WebSource[]
+  request_id?: string
+}
+
+/** Solo se conserva un id con forma de identificador; nunca texto libre del cuerpo. */
+function requestIdDe(v: unknown): string | undefined {
+  return typeof v === 'string' && /^[\w-]{8,80}$/.test(v) ? v : undefined
+}
+
+/**
+ * Sustituye los tokens declarados de cada mensaje por los que el servidor
+ * registró para su request. Sin fila verificada el mensaje conserva su copia y
+ * queda marcado como no verificado.
+ */
+export function aplicarUsoVerificado(
+  messages: ChatMsg[],
+  uso: Map<string, { prompt: number; completion: number }>,
+): ChatMsg[] {
+  return messages.map((m) => {
+    if (m.role !== 'bot') return m
+    const v = m.requestId ? uso.get(m.requestId) : undefined
+    if (!v) return { ...m, verificado: false }
+    return { ...m, tokens_prompt: v.prompt, tokens_completion: v.completion, verificado: true }
+  })
+}
+
+/** Total de la conversación a partir de sus mensajes; `verificado` solo si todos lo están. */
+export function totalesDe(messages: ChatMsg[]): Uso & { verificado: boolean } {
+  let prompt = 0
+  let completion = 0
+  let verificado = true
+  for (const m of messages) {
+    if (m.role !== 'bot') continue
+    prompt += m.tokens_prompt ?? 0
+    completion += m.tokens_completion ?? 0
+    if ((m.tokens_prompt || m.tokens_completion) && !m.verificado) verificado = false
+  }
+  return { prompt, completion, verificado }
 }
 
 /** Últimos 4 pares para el Worker. El embed/RAG solo ven `query`; el history no resuelve "ese contrato". */
@@ -145,6 +187,7 @@ export interface StreamChat {
   refs: ContratoRef[]
   web: WebSource[]
   usage: Uso
+  requestId?: string
 }
 
 export const STREAM_INICIAL: StreamChat = { text: '', refs: [], web: [], usage: { prompt: 0, completion: 0 } }
@@ -184,6 +227,7 @@ export function aplicarEventoChat(
         refs: ev.contratos_referenciados ?? [],
         web: ev.web_sources ?? [],
         usage: ev.usage ?? { prompt: 0, completion: 0 },
+        requestId: requestIdDe(ev.request_id),
       },
       patch: null,
       error: null,
@@ -204,6 +248,8 @@ export function mensajeDesdeStream(s: StreamChat, contratos: Contrato[], query: 
     query,
     tokens_prompt: s.usage.prompt,
     tokens_completion: s.usage.completion,
+    requestId: s.requestId,
+    verificado: Boolean(s.requestId),
   }
 }
 
@@ -219,6 +265,8 @@ export function mensajeDesdeJson(data: RespuestaJson, contratos: Contrato[], que
     query,
     tokens_prompt: data.usage?.prompt ?? 0,
     tokens_completion: data.usage?.completion ?? 0,
+    requestId: requestIdDe(data.request_id),
+    verificado: Boolean(requestIdDe(data.request_id)),
   }
 }
 

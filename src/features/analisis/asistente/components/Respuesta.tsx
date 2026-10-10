@@ -191,6 +191,14 @@ export function RespuestaStats({ m }: { m: EscenaMsg }) {
       <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-medium text-[var(--text-secondary)]">
         <span>Estadísticas de la respuesta</span>
         <span className="text-[10px] text-slate-400">⚡ {total.toLocaleString('es-PE')} tokens · {fmtCostoUsd(cost)}</span>
+        {m.verificado === false && (
+          <span
+            className="rounded border border-[var(--border)] px-1 text-[10px] text-slate-400"
+            title="Sin registro del servidor para esta respuesta: cifras guardadas por el navegador"
+          >
+            estimado
+          </span>
+        )}
       </summary>
       <div className="space-y-1 border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--text-secondary)]">
         {m.model && (

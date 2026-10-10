@@ -6,6 +6,7 @@ import type { EscenarioPayload, ChatTabla, ChatGrafica } from '../../../lib/anal
 import { escenarioMuestraCifras } from '../../../lib/analisis'
 import type { MensajeChat } from '../../../lib/chatSesiones'
 import { eventosSse } from '../../../lib/sse'
+import type { UsoVerificado } from '../../../lib/usoVerificado'
 
 export const CHIPS_ESCENARIO = [
   'instancias más chicas',
@@ -73,6 +74,8 @@ export interface EscenaMsg {
   model?: string
   /** ID de request (para copiar/reportar). */
   requestId?: string
+  /** Solo en mensajes recargados: true = uso leído de `uso_ia`; false = copia guardada por el navegador (SEC-006). */
+  verificado?: boolean
   /** Metadatos extra de Gemini (finish reason, versión, latencia, tier). */
   meta?: GeminiMeta | null
   /** Fuentes web (grounding) cuando se usó búsqueda en internet. */
@@ -158,6 +161,26 @@ export function msgDesdeFila(m: MensajeChat): EscenaMsg {
     }
   }
   return base
+}
+
+/**
+ * Al recargar una consulta, el uso que el servidor registró en `uso_ia` reemplaza
+ * la copia del payload. Sin fila verificada el mensaje conserva su copia y queda
+ * marcado como declarado.
+ */
+export function aplicarUsoVerificadoEscena(messages: EscenaMsg[], uso: Map<string, UsoVerificado>): EscenaMsg[] {
+  return messages.map((m) => {
+    if (m.role !== 'bot') return m
+    const v = m.requestId ? uso.get(m.requestId) : undefined
+    if (!v) return m.usage || m.costoUsd != null ? { ...m, verificado: false } : m
+    return {
+      ...m,
+      usage: { prompt: v.prompt, completion: v.completion, thoughts: v.thoughts, cached: v.cached },
+      costoUsd: v.costoUsd,
+      model: v.modelo ?? m.model,
+      verificado: true,
+    }
+  })
 }
 
 // Precio USD por 1M tokens (input, output). Solo fallback: desde FIX-009 el
