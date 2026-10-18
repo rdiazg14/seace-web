@@ -16,7 +16,7 @@ const CURL_BUSCAR = `curl -X POST '${SUPABASE_URL}/rest/v1/rpc/buscar_contratos'
 
 const CURL_AI = `curl -X POST '${AI_PROXY}' \\
   -H "Content-Type: application/json" \\
-  -H "Origin: https://seace.rdiaz-lab.xyz" \\
+  -H "Origin: https://seace.csitecl.com" \\
   -d '{"query": "contratos de ciberseguridad vigentes"}'`
 
 const CURL_TDR = `curl -X POST '${SUPABASE_URL}/rest/v1/rpc/buscar_tdr' \\

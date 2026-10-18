@@ -40,5 +40,5 @@ Deno.serve(crearHandler({
   },
   correo,
   ahora: () => new Date(),
-  panelUrl: Deno.env.get('PANEL_URL') || 'https://seace.rdiaz-lab.xyz/observabilidad',
+  panelUrl: Deno.env.get('PANEL_URL') || 'https://seace.csitecl.com/observabilidad',
 }))

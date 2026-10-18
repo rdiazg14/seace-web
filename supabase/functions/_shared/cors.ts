@@ -1,5 +1,5 @@
 export const ALLOWED_ORIGINS = [
-  'https://seace.rdiaz-lab.xyz',
+  'https://seace.csitecl.com',
   'https://rdiazg14.github.io',
   'http://localhost:5173',
 ]
