@@ -4,6 +4,13 @@ import { Modal } from './Modal'
 import { EstadoPill } from './Pills'
 import { fmtFecha, fmtFechaHora, nroContrato, parseIso, seaceUrl, tituloContrato } from '../lib/format'
 import { esEtapaConsultas } from '../features/rutadia/model'
+import {
+  ordinalConvocatoria,
+  resultadoDe,
+  type ConvocatoriaFila,
+  type ResumenConvocatorias,
+} from '../features/rutadia/convocatorias'
+import { BotonVerTdr } from './BotonVerTdr'
 
 type EstadoEtapa = 'abierta' | 'futura' | 'cerrada' | 'sin'
 
@@ -128,14 +135,114 @@ function Seccion({ titulo, children }: { titulo: string; children: React.ReactNo
   )
 }
 
+const FMT_SOLES = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
+
+function ResultadoConvocatoria({ fila }: { fila: ConvocatoriaFila }) {
+  const r = resultadoDe(fila)
+  if (r === 'desierto') {
+    return (
+      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
+        Desierta
+      </span>
+    )
+  }
+  if (r === 'adjudicado') {
+    const monto = fila.monto_adjudicado != null && !Number.isNaN(Number(fila.monto_adjudicado))
+      ? FMT_SOLES.format(Number(fila.monto_adjudicado))
+      : null
+    return (
+      <span className="text-[11px] text-[var(--text-primary)]">
+        <span className="rounded-full bg-sky-500/15 px-2 py-0.5 font-medium text-sky-800 dark:text-sky-300">Adjudicada</span>
+        {(fila.proveedor_ganador || monto) && (
+          <span className="ml-1.5 text-[var(--text-secondary)]">
+            {[fila.proveedor_ganador, monto].filter(Boolean).join(' · ')}
+          </span>
+        )}
+      </span>
+    )
+  }
+  return (
+    <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+      {fila.estado === 'Vigente' ? 'En curso' : fila.estado === 'En Evaluación' ? 'En evaluación' : 'Sin resultado'}
+    </span>
+  )
+}
+
+/** Historial del requerimiento: cada vez que la entidad lo convocó y cómo terminó. */
+function Convocatorias({ resumen }: { resumen: ResumenConvocatorias }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-[var(--text-secondary)]">
+        Este proceso es la {ordinalConvocatoria(resumen.numero)} convocatoria de {resumen.total}. Se agrupan
+        los procesos de la misma entidad con la misma descripción.
+        {resumen.desiertasPrevias > 0 && ' Una convocatoria anterior desierta suele indicar poca competencia.'}
+      </p>
+      <ol className="space-y-2">
+        {resumen.filas.map((f) => (
+          <li
+            key={f.convocatoria_id}
+            className={`rounded-lg border px-3 py-2 ${
+              f.es_actual ? 'border-teal-400/60 bg-teal-500/5' : 'border-[var(--border)] bg-[var(--bg-card)]'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 text-sm font-medium text-[var(--text-primary)]">
+                {ordinalConvocatoria(f.numero)}
+                <span className="ml-2 font-mono text-xs font-normal">
+                  {nroContrato({
+                    descripcion_contrato: f.descripcion_contrato ?? '',
+                    nro_contratacion: f.nro_contratacion ?? '',
+                    id: f.convocatoria_id,
+                  })}
+                </span>
+                {f.es_actual && (
+                  <span className="ml-2 rounded-full bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 dark:text-teal-300">
+                    este proceso
+                  </span>
+                )}
+              </span>
+              <ResultadoConvocatoria fila={f} />
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--text-secondary)]">
+              <span className="font-mono">Publicada {fmtFecha(f.fecha_publica)}</span>
+              <span className="font-mono">
+                Cotización {fmtFechaHora(f.fecha_ini_cotizacion)} – {fmtFechaHora(f.fecha_fin_cotizacion)}
+              </span>
+              {!f.es_actual && (
+                <span className="ml-auto flex flex-wrap items-center gap-2">
+                  <BotonVerTdr
+                    contratoId={f.convocatoria_id}
+                    pdfArchivoId={f.pdf_archivo_id}
+                    pdfStoragePath={f.pdf_storage_path}
+                  />
+                  <a
+                    href={seaceUrl(f.convocatoria_id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-[var(--border)] px-2.5 py-1 font-medium hover:border-teal-400 hover:text-[var(--text-primary)]"
+                  >
+                    Ver en SEACE ↗
+                  </a>
+                </span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export default function ContratoDetallePanel({
   contrato,
   oculto,
+  convocatorias = null,
   onToggleOculto,
   onClose,
 }: {
   contrato: Contrato
   oculto: boolean
+  convocatorias?: ResumenConvocatorias | null
   onToggleOculto: (oculto: boolean) => void
   onClose: () => void
 }) {
@@ -185,6 +292,12 @@ export default function ContratoDetallePanel({
             <Campo label="Cierre de cotización" value={fmtFechaHora(c.fecha_fin_cotizacion)} />
           </div>
         </Seccion>
+
+        {convocatorias && (
+          <Seccion titulo="Convocatorias de este requerimiento">
+            <Convocatorias resumen={convocatorias} />
+          </Seccion>
+        )}
 
         {/* Cronograma */}
         <Seccion titulo="Cronograma de etapas">

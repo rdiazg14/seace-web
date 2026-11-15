@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Oportunidad } from '../features/rutadia/model'
 import { estadoConsultas, nivelLabel } from '../features/rutadia/model'
+import { etiquetaConvocatoria, type ResumenConvocatorias, type TonoConvocatoria } from '../features/rutadia/convocatorias'
 import type { Contrato } from '../types'
 import { cierraEn, fmtFecha, fmtFechaHora, nroContrato, seaceUrl, tituloContrato } from '../lib/format'
 import { CierraPill, EstadoPill, CatItIaPill, ObjetoPill } from './Pills'
@@ -76,11 +77,42 @@ function ConsultaPill({ c }: { c: Contrato }) {
   )
 }
 
+const TONO_CONVOCATORIA_CLS: Record<TonoConvocatoria, string> = {
+  desierta: 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
+  adjudicada: 'bg-sky-500/15 text-sky-800 dark:text-sky-300',
+  neutro: 'bg-slate-500/15 text-slate-600 dark:text-slate-300',
+}
+
+/** Reconvocatoria: visible en la tarjeta; abre el detalle con el historial. */
+function ConvocatoriaPill({
+  convocatorias,
+  onOpen,
+}: {
+  convocatorias: ResumenConvocatorias | null | undefined
+  onOpen?: () => void
+}) {
+  const etiqueta = etiquetaConvocatoria(convocatorias)
+  if (!etiqueta) return null
+  const cls = `rounded-full px-2 py-0.5 text-[11px] font-medium ${TONO_CONVOCATORIA_CLS[etiqueta.tono]}`
+  if (!onOpen) return <span className={cls}>↻ {etiqueta.texto}</span>
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Ver las convocatorias anteriores"
+      className={`${cls} underline-offset-2 hover:underline`}
+    >
+      ↻ {etiqueta.texto}
+    </button>
+  )
+}
+
 export default function OportunidadCard({
   o,
   rank,
   compact = false,
   oculto = false,
+  convocatorias = null,
   onOpenDetalle,
   onRestore,
 }: {
@@ -88,6 +120,7 @@ export default function OportunidadCard({
   rank: number
   compact?: boolean
   oculto?: boolean
+  convocatorias?: ResumenConvocatorias | null
   onOpenDetalle?: () => void
   onRestore?: () => void
 }) {
@@ -140,6 +173,7 @@ export default function OportunidadCard({
               <CierraPill label={cierre.label} tone={cierre.tone} />
             )}
             <ConsultaPill c={c} />
+            <ConvocatoriaPill convocatorias={convocatorias} onOpen={onOpenDetalle} />
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">

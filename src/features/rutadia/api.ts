@@ -6,6 +6,7 @@ import {
   sliceDesdeFilaAnalisis,
   type AnalisisScoreSlice,
 } from './model'
+import { CONVOCATORIAS_SELECT, type ConvocatoriaFila } from './convocatorias'
 
 const PAGE = 1000
 const ID_CHUNK = 1000
@@ -126,6 +127,42 @@ export async function fetchAnalisisScore(ids: number[], signal?: AbortSignal): P
     }
   }
   return { filas, completo: lecturas.every(l => l.completo), total }
+}
+
+/**
+ * Convocatorias del mismo requerimiento para los procesos del universo.
+ * La vista solo devuelve grupos con más de una convocatoria, así que la
+ * mayoría de ids no trae filas.
+ */
+export async function fetchConvocatorias(ids: number[], signal?: AbortSignal): Promise<Lectura<ConvocatoriaFila>> {
+  if (ids.length === 0) return { filas: [], completo: true, total: 0 }
+  exigirVigente(signal)
+  const chunks: number[][] = []
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    chunks.push(ids.slice(i, i + ID_CHUNK))
+  }
+  const lecturas = await Promise.all(
+    chunks.map(chunk => leerPaginado<ConvocatoriaFila>((desde, hasta, contar) => {
+      let q = supabase
+        .from('v_convocatorias')
+        .select(CONVOCATORIAS_SELECT, contar ? { count: 'exact' } : undefined)
+        .in('contrato_id', chunk)
+        .order('contrato_id')
+        .order('numero')
+        .range(desde, hasta)
+      if (signal) q = q.abortSignal(signal)
+      return q as unknown as PromiseLike<Pagina>
+    }, signal)),
+  )
+  let total: number | null = 0
+  for (const lectura of lecturas) {
+    total = total == null || lectura.total == null ? null : total + lectura.total
+  }
+  return {
+    filas: lecturas.flatMap(l => l.filas),
+    completo: lecturas.every(l => l.completo),
+    total,
+  }
 }
 
 export interface EstadoPipeline {

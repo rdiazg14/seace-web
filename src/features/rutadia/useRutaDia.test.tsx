@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   auth: { session: { user: { id: 'user-a' } } as { user: { id: string } } | null },
   universo: vi.fn(),
   analisis: vi.fn(),
+  convocatorias: vi.fn(),
   pipeline: vi.fn(),
   ocultos: vi.fn(),
   ocultar: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('./api', () => {
   return {
   fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
   fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
+  fetchConvocatorias: async (...a: unknown[]) => comoLectura(await m.convocatorias(...a)),
   cargarEstadoPipeline: m.pipeline,
   cargarOcultos: m.ocultos,
   ocultarContrato: m.ocultar,
@@ -69,6 +71,7 @@ beforeEach(() => {
   m.auth.session = { user: { id: 'user-a' } }
   m.universo.mockResolvedValue([])
   m.analisis.mockResolvedValue([])
+  m.convocatorias.mockResolvedValue([])
   m.pipeline.mockResolvedValue(null)
   m.ocultos.mockResolvedValue(new Set())
   m.ocultar.mockResolvedValue(true)
@@ -434,5 +437,48 @@ describe('contrato preservado', () => {
     expect(m.analisis).not.toHaveBeenCalled()
     await act(async () => d.resolve([postulable(4), postulable(9)]))
     expect(m.analisis).toHaveBeenCalledWith([4, 9], expect.any(AbortSignal))
+  })
+})
+
+describe('historial de convocatorias', () => {
+  const fila = (contratoId: number, numero: number, esActual: boolean, resultado: string | null) => ({
+    contrato_id: contratoId,
+    convocatoria_id: contratoId * 100 + numero,
+    numero,
+    total: 2,
+    es_actual: esActual,
+    nro_contratacion: null,
+    descripcion_contrato: null,
+    estado: 'Culminado',
+    fecha_publica: null,
+    fecha_ini_cotizacion: null,
+    fecha_fin_cotizacion: null,
+    resultado,
+    proveedor_ganador: null,
+    monto_adjudicado: null,
+    pdf_archivo_id: null,
+    pdf_storage_path: null,
+  })
+
+  it('se pide con los ids del universo y queda resumido por proceso', async () => {
+    m.universo.mockResolvedValue([postulable(4), postulable(9)])
+    m.convocatorias.mockResolvedValue([fila(9, 1, false, 'DESIERTO'), fila(9, 2, true, null)])
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(m.convocatorias).toHaveBeenCalledWith([4, 9], expect.any(AbortSignal))
+    expect(result.current.convocatorias.get(9)).toMatchObject({ numero: 2, previas: 1, desiertasPrevias: 1 })
+    expect(result.current.convocatorias.has(4)).toBe(false)
+    expect(result.current.convocatoriasError).toBe(false)
+  })
+
+  it('si falla, la lista se muestra igual y el fallo se señala aparte', async () => {
+    m.universo.mockResolvedValue([postulable(1)])
+    m.convocatorias.mockRejectedValue(new Error('permiso denegado'))
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toBeNull()
+    expect(result.current.postulablesVisibles.map(o => o.contrato.id)).toEqual([1])
+    expect(result.current.convocatorias.size).toBe(0)
+    expect(result.current.convocatoriasError).toBe(true)
   })
 })

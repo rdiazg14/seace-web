@@ -10,6 +10,7 @@ import { authState, fakeSession, perfilNormal, renderUI, setAuth } from '../test
 const m = vi.hoisted(() => ({
   universo: vi.fn(),
   analisis: vi.fn(),
+  convocatorias: vi.fn(),
   pipeline: vi.fn(),
   ocultos: vi.fn(),
 }))
@@ -20,6 +21,7 @@ vi.mock('../features/rutadia/api', () => {
   return {
     fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
     fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
+    fetchConvocatorias: async (...a: unknown[]) => comoLectura(await m.convocatorias(...a)),
     cargarEstadoPipeline: m.pipeline,
     cargarOcultos: m.ocultos,
     ocultarContrato: vi.fn(async () => true),
@@ -32,6 +34,7 @@ beforeEach(() => {
   setAuth({ session: fakeSession, perfil: perfilNormal })
   m.universo.mockResolvedValue([])
   m.analisis.mockResolvedValue([])
+  m.convocatorias.mockResolvedValue([])
   m.pipeline.mockResolvedValue(null)
   m.ocultos.mockResolvedValue(new Set())
 })

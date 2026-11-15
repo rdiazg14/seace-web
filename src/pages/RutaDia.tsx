@@ -26,6 +26,8 @@ export default function RutaDia() {
     reintentarPipeline,
     universoIncompleto,
     analisisIncompleto,
+    convocatorias,
+    convocatoriasError,
     nivel,
     setNivel,
     linea,
@@ -121,6 +123,11 @@ export default function RutaDia() {
       {analisisIncompleto && (
         <ErrorBox retry={recargar}>
           No se cargaron todos los análisis; algunos puntajes usan la estimación sin TDR.
+        </ErrorBox>
+      )}
+      {convocatoriasError && (
+        <ErrorBox retry={recargar}>
+          No se cargó el historial de convocatorias; las tarjetas no indican si un proceso es una reconvocatoria.
         </ErrorBox>
       )}
 
@@ -238,6 +245,7 @@ export default function RutaDia() {
                 o={o}
                 rank={(pagPost - 1) * tamPagina + i + 1}
                 compact={tamPagina > 50}
+                convocatorias={convocatorias.get(o.contrato.id)}
                 onOpenDetalle={() => setDetalleId(o.contrato.id)}
               />
             ))}
@@ -281,6 +289,7 @@ export default function RutaDia() {
                 o={o}
                 rank={(pagOtras - 1) * tamPagina + i + 1}
                 compact={tamPagina > 50}
+                convocatorias={convocatorias.get(o.contrato.id)}
                 onOpenDetalle={() => setDetalleId(o.contrato.id)}
               />
             ))}
@@ -312,6 +321,7 @@ export default function RutaDia() {
                   rank={i + 1}
                   oculto
                   onRestore={() => void restaurar(o.contrato.id)}
+                  convocatorias={convocatorias.get(o.contrato.id)}
                   onOpenDetalle={() => setDetalleId(o.contrato.id)}
                 />
               ))}
@@ -329,6 +339,7 @@ export default function RutaDia() {
         <ContratoDetallePanel
           contrato={detalleOportunidad.contrato}
           oculto={ocultos.has(detalleOportunidad.contrato.id)}
+          convocatorias={convocatorias.get(detalleOportunidad.contrato.id)}
           onToggleOculto={(ocultoNuevo) => {
             const id = detalleOportunidad.contrato.id
             if (ocultoNuevo) void ocultar(id)

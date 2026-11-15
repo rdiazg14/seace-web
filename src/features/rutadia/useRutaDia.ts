@@ -15,11 +15,15 @@ import {
   cargarEstadoPipeline,
   cargarOcultos,
   fetchAnalisisScore,
+  fetchConvocatorias,
   fetchUniverso,
   ocultarContrato,
   restaurarContrato,
   type AnalisisFilaScore,
 } from './api'
+import { agruparConvocatorias, type ResumenConvocatorias } from './convocatorias'
+
+const SIN_CONVOCATORIAS: Map<number, ResumenConvocatorias> = new Map()
 
 export const TAM_PAGINA_OPCIONES = [10, 20, 50, 100] as const
 
@@ -79,6 +83,9 @@ export function useRutaDia() {
   const [pipelineCargando, setPipelineCargando] = useState(true)
   const [universoIncompleto, setUniversoIncompleto] = useState<{ cargados: number; total: number | null } | null>(null)
   const [analisisIncompleto, setAnalisisIncompleto] = useState(false)
+  // Informativo: sin este dato la lista funciona igual, solo no muestra reconvocatorias.
+  const [convocatorias, setConvocatorias] = useState(SIN_CONVOCATORIAS)
+  const [convocatoriasError, setConvocatoriasError] = useState(false)
   // Reloj de la pantalla: vigencia, urgencia y KPIs dependen de la fecha y se
   // recalculan aunque Diario quede abierto al cambiar de día o de ventana.
   const [ahora, setAhora] = useState(() => new Date())
@@ -146,10 +153,16 @@ export function useRutaDia() {
         // Tras salir de la pantalla o vencer el plazo no se inicia el análisis.
         carga.exigirVigente()
         // Ids del universo (Vigente + En Evaluación).
-        const analisis = await fetchAnalisisScore(universo.filas.map(c => c.id), carga.signal)
+        const ids = universo.filas.map(c => c.id)
+        // En paralelo con el análisis; su fallo no bloquea la lista.
+        const convocatoriasLeidas = fetchConvocatorias(ids, carga.signal).catch(() => null)
+        const analisis = await fetchAnalisisScore(ids, carga.signal)
+        const historial = await convocatoriasLeidas
         carga.exigirVigente()
         setRaw(universo.filas)
         setAnalisisFilas(analisis.filas)
+        setConvocatorias(historial ? agruparConvocatorias(historial.filas) : SIN_CONVOCATORIAS)
+        setConvocatoriasError(historial == null || !historial.completo)
         setUniversoIncompleto(universo.completo ? null : { cargados: universo.filas.length, total: universo.total })
         setAnalisisIncompleto(!analisis.completo)
         setAhora(new Date())
@@ -291,6 +304,8 @@ export function useRutaDia() {
     reintentarPipeline: () => setIntentoPipeline(n => n + 1),
     universoIncompleto,
     analisisIncompleto,
+    convocatorias,
+    convocatoriasError,
     nivel,
     setNivel,
     linea,

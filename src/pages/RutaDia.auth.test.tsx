@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
   from: vi.fn(),
   universo: vi.fn(),
   analisis: vi.fn(),
+  convocatorias: vi.fn(),
   pipeline: vi.fn(),
   ocultos: vi.fn(),
 }))
@@ -29,6 +30,7 @@ vi.mock('../features/rutadia/api', () => {
   return {
     fetchUniverso: async (...a: unknown[]) => comoLectura(await m.universo(...a)),
     fetchAnalisisScore: async (...a: unknown[]) => comoLectura(await m.analisis(...a)),
+    fetchConvocatorias: async (...a: unknown[]) => comoLectura(await m.convocatorias(...a)),
     cargarEstadoPipeline: m.pipeline,
     cargarOcultos: m.ocultos,
     ocultarContrato: vi.fn(async () => true),
@@ -67,6 +69,7 @@ beforeEach(() => {
   m.from.mockImplementation(perfilQuery)
   m.universo.mockResolvedValue([])
   m.analisis.mockResolvedValue([])
+  m.convocatorias.mockResolvedValue([])
   m.pipeline.mockResolvedValue(null)
   m.ocultos.mockResolvedValue(new Set())
 })
