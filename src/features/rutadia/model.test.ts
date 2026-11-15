@@ -3,9 +3,12 @@ import type { Contrato } from '../../types'
 import {
   aplicarFiltros,
   clasificarNivel,
+  cronogramaIniciado,
+  esEnPreparacion,
   esEtapaConsultas,
   esPorAbrir,
   esPostulable,
+  esSinIniciar,
   estadoConsultas,
   nivelLabel,
   norm,
@@ -354,5 +357,106 @@ describe('resumenDiario (KPIs del encabezado)', () => {
       puntuar(mkContrato({ id: 1, descripcion: 'plataforma scada' }), AHORA),
     ]
     expect(resumenDiario(scored, AHORA).nucleoTel).toBe(1)
+  })
+})
+
+describe('ubicación en el Diario según el cronograma', () => {
+  // Cotización del 30/09 08:00 al 30/09 12:00: todavía no abre el 26/09 15:00.
+  const COTIZA = {
+    fecha_ini_cotizacion: '2026-09-30T08:00:00-05:00',
+    fecha_fin_cotizacion: '2026-09-30T12:00:00-05:00',
+  }
+  const ETAPA_COTIZA = { etapa: 'ETAPA DE COTIZACIÓN', fec_ini: COTIZA.fecha_ini_cotizacion, fec_fin: COTIZA.fecha_fin_cotizacion }
+  const consultasAbiertas = mkContrato({
+    id: 11,
+    ...COTIZA,
+    etapas_json: [
+      { etapa: 'ETAPA DE CONSULTAS', fec_ini: '2026-09-25T12:00:00-05:00', fec_fin: '2026-09-28T18:00:00-05:00' },
+      ETAPA_COTIZA,
+    ],
+  })
+  const consultasCerradas = mkContrato({
+    id: 12,
+    ...COTIZA,
+    etapas_json: [
+      { etapa: 'ETAPA DE CONSULTAS', fec_ini: '2026-09-24T12:00:00-05:00', fec_fin: '2026-09-25T18:00:00-05:00' },
+      ETAPA_COTIZA,
+    ],
+  })
+  const nadaAbierto = mkContrato({
+    id: 13,
+    ...COTIZA,
+    etapas_json: [
+      { etapa: 'ETAPA DE CONSULTAS', fec_ini: '2026-09-28T09:00:00-05:00', fec_fin: '2026-09-29T09:00:00-05:00' },
+      ETAPA_COTIZA,
+    ],
+  })
+  const sinCronograma = mkContrato({ id: 14, ...COTIZA, etapas_json: null })
+
+  it('cronogramaIniciado exige una etapa con inicio ya alcanzado', () => {
+    expect(cronogramaIniciado(consultasAbiertas.etapas_json, AHORA)).toBe(true)
+    expect(cronogramaIniciado(consultasCerradas.etapas_json, AHORA)).toBe(true)
+    expect(cronogramaIniciado(nadaAbierto.etapas_json, AHORA)).toBe(false)
+    expect(cronogramaIniciado(null, AHORA)).toBe(false)
+    expect(cronogramaIniciado([{ etapa: 'Consultas', fec_ini: null, fec_fin: null }], AHORA)).toBe(false)
+  })
+
+  it('con consultas abiertas o ya cerradas está en preparación, no sin iniciar', () => {
+    for (const c of [consultasAbiertas, consultasCerradas]) {
+      expect(esPostulable(c, AHORA)).toBe(false)
+      expect(esPorAbrir(c, AHORA)).toBe(true)
+      expect(esEnPreparacion(c, AHORA)).toBe(true)
+      expect(esSinIniciar(c, AHORA)).toBe(false)
+    }
+  })
+
+  it('si ninguna etapa empezó, o no hay cronograma, sigue sin iniciar', () => {
+    for (const c of [nadaAbierto, sinCronograma]) {
+      expect(esEnPreparacion(c, AHORA)).toBe(false)
+      expect(esSinIniciar(c, AHORA)).toBe(true)
+    }
+  })
+
+  it('un proceso cerrado o que ya cotiza no está en preparación ni sin iniciar', () => {
+    const cotizando = mkContrato({ etapas_json: consultasCerradas.etapas_json })
+    const evaluacion = mkContrato({ ...COTIZA, estado: 'En Evaluación', etapas_json: consultasCerradas.etapas_json })
+    for (const c of [cotizando, evaluacion]) {
+      expect(esEnPreparacion(c, AHORA)).toBe(false)
+      expect(esSinIniciar(c, AHORA)).toBe(false)
+    }
+  })
+
+  it('aplicarFiltros lleva lo que está en preparación a la lista principal', () => {
+    const lista = [consultasAbiertas, consultasCerradas, nadaAbierto, sinCronograma, mkContrato({ id: 15 })]
+      .map((c) => puntuar(c, AHORA))
+    const ids = (estado: 'postulable' | 'por_abrir' | 'cerrados') =>
+      aplicarFiltros(lista, { nivel: null, linea: null, cierre: 'todos', estado, ahora: AHORA })
+        .map((o) => o.contrato.id)
+    expect(ids('postulable')).toEqual([11, 12, 15])
+    expect(ids('por_abrir')).toEqual([13, 14])
+    expect(ids('cerrados')).toEqual([])
+  })
+
+  it('puntuar da la misma vigencia en preparación que cotizando y no la da sin iniciar', () => {
+    const cotizando = puntuar(mkContrato(), AHORA)
+    const preparacion = puntuar(consultasCerradas, AHORA)
+    const futura = puntuar(nadaAbierto, AHORA)
+    expect(preparacion.enPreparacion).toBe(true)
+    expect(preparacion.postulable).toBe(false)
+    expect(preparacion.score.vigencia).toBe(cotizando.score.vigencia)
+    expect(futura.enPreparacion).toBe(false)
+    expect(futura.score.vigencia).toBe(0)
+  })
+
+  it('ordenarPostulables ubica lo que está en preparación por su cierre, no al final', () => {
+    const cierraEnUnMes = puntuar(mkContrato({ id: 20, fecha_fin_cotizacion: '2026-10-20T12:00:00-05:00' }), AHORA)
+    const preparacion = puntuar(consultasCerradas, AHORA)
+    const r = ordenarPostulables([cierraEnUnMes, preparacion], AHORA)
+    expect(r.map((o) => o.contrato.id)).toEqual([12, 20])
+  })
+
+  it('resumenDiario cuenta las consultas abiertas de procesos que aún no cotizan', () => {
+    const scored = [consultasAbiertas, consultasCerradas, nadaAbierto].map((c) => puntuar(c, AHORA))
+    expect(resumenDiario(scored, AHORA).consultasAbiertas).toBe(1)
   })
 })

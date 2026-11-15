@@ -84,7 +84,10 @@ export interface Oportunidad {
   margenPct: number | null
   urgente: boolean
   postulable: boolean
+  /** La cotización todavía no abre (`fecha_ini` > ahora). */
   porAbrir: boolean
+  /** La cotización no abre aún, pero el cronograma ya empezó (consultas). */
+  enPreparacion: boolean
   veredicto: 'recomendado' | 'evaluar'
   /** Veredicto Gemini cuando hay análisis usable. */
   veredictoGemini: CodigoVeredicto | null
@@ -446,18 +449,21 @@ export function puntuar(
   const { nivel: nivelKw, overlay, altaIaReal } = clasificarNivel(c)
   const postulable = esPostulable(c, ahora)
   const porAbrir = esPorAbrir(c, ahora)
+  const enPreparacion = esEnPreparacion(c, ahora)
+  // En curso: ya se cotiza, o el cronograma ya empezó y falta que abra la cotización.
+  const enCurso = postulable || enPreparacion
   const cierre = cierraEn(c.fecha_fin_cotizacion, ahora)
   const vencidoVigente = c.estado === 'Vigente' && cierre.days !== null && cierre.days < 0
-  const urgente = postulable && (cierre.tone === 'hoy' || cierre.tone === 'manana')
+  const urgente = enCurso && (cierre.tone === 'hoy' || cierre.tone === 'manana')
 
   if (!analisisUsable(analisis)) {
     const rubro = nivelKw ? PTS_RUBRO[nivelKw] : 0
-    const vigencia = postulable ? 25 : c.estado === 'En Evaluación' ? 12 : 0
+    const vigencia = enCurso ? 25 : c.estado === 'En Evaluación' ? 12 : 0
     const urgencia = vencidoVigente ? 0 : ptsUrgenciaHeuristica(c.fecha_fin_cotizacion, c.estado, ahora)
     const senales = ptsSenales(c, altaIaReal)
     const total = Math.min(100, rubro + vigencia + urgencia + senales)
     const veredicto: 'recomendado' | 'evaluar' =
-      postulable && (nivelKw === 'nucleo' || nivelKw === 'adyacente') ? 'recomendado' : 'evaluar'
+      enCurso && (nivelKw === 'nucleo' || nivelKw === 'adyacente') ? 'recomendado' : 'evaluar'
     return {
       contrato: c,
       nivel: nivelKw,
@@ -470,6 +476,7 @@ export function puntuar(
       urgente,
       postulable,
       porAbrir,
+      enPreparacion,
       veredicto,
       veredictoGemini: null,
     }
@@ -492,7 +499,7 @@ export function puntuar(
   const ptsPag = ptsPago(analisis.condiciones?.armadas ?? null, analisis.condiciones?.tono_pago ?? null)
   const ptsPlazo = ptsTono(analisis.condiciones?.tono_plazo ?? null)
   const ptsRiesgo = ptsTono(analisis.condiciones?.tono_penalidad ?? null)
-  const vigencia = postulable ? 10 : c.estado === 'En Evaluación' ? 5 : 0
+  const vigencia = enCurso ? 10 : c.estado === 'En Evaluación' ? 5 : 0
   const urgencia = vencidoVigente ? 0 : ptsUrgenciaAnalisis(c.fecha_fin_cotizacion, c.estado, ahora)
   // Con análisis, señales keyword no suman.
   const senales = 0
@@ -526,7 +533,7 @@ export function puntuar(
       ? 'recomendado'
       : veredictoGemini
         ? 'evaluar'
-        : postulable && (nivel === 'nucleo' || nivel === 'adyacente')
+        : enCurso && (nivel === 'nucleo' || nivel === 'adyacente')
           ? 'recomendado'
           : 'evaluar'
 
@@ -554,6 +561,7 @@ export function puntuar(
     urgente,
     postulable,
     porAbrir,
+    enPreparacion,
     veredicto,
     veredictoGemini,
   }
@@ -582,7 +590,11 @@ export function esPostulable(
   return fin >= now
 }
 
-/** Vigente cuya ventana de cotización todavía no abre (`fecha_ini` > ahora). */
+/**
+ * Vigente cuya ventana de cotización todavía no abre (`fecha_ini` > ahora).
+ * Habla solo de la cotización: para ubicar el proceso en el Diario se usa
+ * además el cronograma (`esEnPreparacion`, `esSinIniciar`).
+ */
 export function esPorAbrir(
   contrato: Pick<Contrato, 'estado' | 'fecha_ini_cotizacion' | 'fecha_fin_cotizacion'>,
   ahora: Date = new Date(),
@@ -596,6 +608,40 @@ export function esPorAbrir(
   return true
 }
 
+type ContratoVentana = Pick<
+  Contrato,
+  'estado' | 'fecha_ini_cotizacion' | 'fecha_fin_cotizacion' | 'etapas_json'
+>
+
+/** Alguna etapa del cronograma (consultas, cotización…) ya empezó. */
+export function cronogramaIniciado(
+  etapas: Etapa[] | null | undefined,
+  ahora: Date = new Date(),
+): boolean {
+  const now = ahora.getTime()
+  return (etapas ?? []).some(e => {
+    const ini = instanteMs(e.fec_ini ?? null)
+    return ini != null && ini <= now
+  })
+}
+
+/**
+ * La cotización todavía no abre, pero el proceso ya empezó: sus consultas
+ * están abiertas o ya cerraron. Se atiende desde ahora, así que va en la
+ * lista principal del Diario y no en «Por abrir».
+ */
+export function esEnPreparacion(contrato: ContratoVentana, ahora: Date = new Date()): boolean {
+  return esPorAbrir(contrato, ahora) && cronogramaIniciado(contrato.etapas_json, ahora)
+}
+
+/**
+ * Ninguna etapa ha empezado: ni consultas ni cotización. Sin cronograma
+ * cargado decide solo la fecha de inicio de cotización.
+ */
+export function esSinIniciar(contrato: ContratoVentana, ahora: Date = new Date()): boolean {
+  return esPorAbrir(contrato, ahora) && !cronogramaIniciado(contrato.etapas_json, ahora)
+}
+
 /** Universo puntuado: Vigente (incl. vencidos) + En Evaluación. El chip recorta postulable. */
 export function rankingActivo(items: Oportunidad[]): Oportunidad[] {
   return items
@@ -604,6 +650,10 @@ export function rankingActivo(items: Oportunidad[]): Oportunidad[] {
 }
 
 export type FiltroCierre = 'todos' | 'hoy' | 'semana' | 'mes'
+/**
+ * `postulable` es la lista principal: se cotiza ya o el cronograma ya empezó.
+ * `por_abrir` son los que no han iniciado ninguna etapa.
+ */
 export type FiltroEstado = 'postulable' | 'por_abrir' | 'cerrados'
 
 export function aplicarFiltros(
@@ -621,9 +671,11 @@ export function aplicarFiltros(
   return ranking.filter(o => {
     if (opts.nivel && o.nivel !== opts.nivel) return false
     if (opts.linea && o.contrato.categoria_it !== opts.linea) return false
-    if (opts.estado === 'postulable' && !esPostulable(o.contrato, ahora)) return false
-    if (opts.estado === 'por_abrir' && !esPorAbrir(o.contrato, ahora)) return false
-    if (opts.estado === 'cerrados' && (esPostulable(o.contrato, ahora) || esPorAbrir(o.contrato, ahora))) return false
+    const enCurso = esPostulable(o.contrato, ahora) || esEnPreparacion(o.contrato, ahora)
+    const sinIniciar = esSinIniciar(o.contrato, ahora)
+    if (opts.estado === 'postulable' && !enCurso) return false
+    if (opts.estado === 'por_abrir' && !sinIniciar) return false
+    if (opts.estado === 'cerrados' && (enCurso || sinIniciar)) return false
     if (opts.cierre !== 'todos') {
       const fin = o.contrato.fecha_fin_cotizacion
       if (!fin) return false
@@ -704,7 +756,7 @@ export function estadoConsultas(
  */
 export function ordenarPostulables(items: Oportunidad[], ahora = new Date()): Oportunidad[] {
   const bucket = (o: Oportunidad): number => {
-    if (!o.postulable) return 9
+    if (!o.postulable && !o.enPreparacion) return 9
     const d = cierraEn(o.contrato.fecha_fin_cotizacion, ahora).days
     if (d == null) return 9
     if (d <= 0) return 0
@@ -738,7 +790,7 @@ export function resumenDiario(scored: Oportunidad[], ahora = new Date()): Resume
   const today = limaDateISO(ahora)
   const tomorrow = addCalendarDays(today, 1)
   const weekEnd = addCalendarDays(today, 7)
-  const vigentes = scored.filter(o => o.postulable)
+  const vigentes = scored.filter(o => o.postulable || o.enPreparacion)
   const nuevosHoy = vigentes.filter(o => dayOf(o.contrato.fecha_publica) === today).length
   let cierranHoy = 0
   let cierranManana = 0

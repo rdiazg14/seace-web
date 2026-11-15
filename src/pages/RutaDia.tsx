@@ -147,7 +147,8 @@ export default function RutaDia() {
         <div>
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Postulables</h2>
           <p className="text-[11px] text-slate-500">
-            Todos los postulables, ordenados por vencimiento (lo que cierra antes va primero).{' '}
+            Procesos en curso: ya se cotiza o ya empezó su cronograma (consultas). Ordenados por vencimiento
+            (lo que cierra antes va primero).{' '}
             {postulablesVisibles.length.toLocaleString('es-PE')} en vista.
           </p>
         </div>
@@ -254,7 +255,7 @@ export default function RutaDia() {
         <div>
           <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Otras etapas</h2>
           <p className="text-[11px] text-slate-500">
-            Por abrir, en evaluación o vencidos. No son postulables.{' '}
+            Por abrir (ninguna etapa ha empezado), en evaluación o vencidos. No son postulables.{' '}
             {otras.length.toLocaleString('es-PE')} en vista.
           </p>
         </div>

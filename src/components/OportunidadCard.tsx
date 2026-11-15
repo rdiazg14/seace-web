@@ -95,7 +95,9 @@ export default function OportunidadCard({
   const cierre = cierraEn(c.fecha_fin_cotizacion)
   const titulo = tituloContrato(c)
   const porAbrir = o.porAbrir
+  const enPreparacion = o.enPreparacion
   const cerrado = !o.postulable && !porAbrir
+  const consultasAbiertas = enPreparacion && estadoConsultas(c.etapas_json).abierta
   const [abriendoAnalisis, setAbriendoAnalisis] = useState(false)
   const analisisNavLock = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -129,7 +131,10 @@ export default function OportunidadCard({
               <EstadoPill estado={c.estado} />
             )}
             {porAbrir && c.fecha_ini_cotizacion && (
-              <CierraPill label={`Abre ${fmtFechaHora(c.fecha_ini_cotizacion)}`} tone="abre" />
+              <CierraPill
+                label={`${enPreparacion ? 'Cotización abre' : 'Abre'} ${fmtFechaHora(c.fecha_ini_cotizacion)}`}
+                tone="abre"
+              />
             )}
             {c.fecha_fin_cotizacion && !cerrado && !porAbrir && (
               <CierraPill label={cierre.label} tone={cierre.tone} />
@@ -179,7 +184,11 @@ export default function OportunidadCard({
 
       {porAbrir && c.fecha_ini_cotizacion && (
         <p className="mb-1.5 rounded-md bg-violet-500/10 px-2 py-1 text-[11px] text-violet-800 dark:text-violet-300">
-          La ventana abre el {fmtFechaHora(c.fecha_ini_cotizacion)} (hora Lima). Aún no se puede postular.
+          {enPreparacion
+            ? `En curso: la cotización abre el ${fmtFechaHora(c.fecha_ini_cotizacion)} (hora Lima). ${
+                consultasAbiertas ? 'Ya se pueden enviar consultas.' : 'Todavía no se puede cotizar.'
+              }`
+            : `La ventana abre el ${fmtFechaHora(c.fecha_ini_cotizacion)} (hora Lima). Aún no se puede postular.`}
         </p>
       )}
       {cerrado && (
