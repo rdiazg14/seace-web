@@ -3,6 +3,7 @@ import {
   agruparConvocatorias,
   etiquetaConvocatoria,
   ordinalConvocatoria,
+  ptsConvocatoria,
   resultadoDe,
   type ConvocatoriaFila,
 } from './convocatorias'
@@ -101,5 +102,18 @@ describe('convocatorias del mismo requerimiento', () => {
   it('ordinalConvocatoria usa el ordinal femenino abreviado', () => {
     expect(ordinalConvocatoria(2)).toBe('2.ª')
     expect(ordinalConvocatoria(11)).toBe('11.ª')
+  })
+
+  it('ptsConvocatoria suma solo por antecedentes desiertos', () => {
+    const pts = (resultados: (string | null)[], actual = resultados.length) =>
+      ptsConvocatoria(agruparConvocatorias(grupo(1, resultados, actual)).get(1))
+    expect(pts(['DESIERTO', null])).toBe(5)
+    expect(pts(['DESIERTO', 'DESIERTO', null])).toBe(10)
+    expect(pts(['DESIERTO', 'DESIERTO', 'DESIERTO', null])).toBe(10)
+    expect(pts(['ADJUDICADO', null])).toBe(0)
+    expect(pts([null, null])).toBe(0)
+    // Un desierto posterior a este proceso no es antecedente.
+    expect(pts([null, 'DESIERTO'], 1)).toBe(0)
+    expect(ptsConvocatoria(null)).toBe(0)
   })
 })

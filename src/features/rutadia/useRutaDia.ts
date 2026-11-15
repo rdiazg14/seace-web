@@ -253,9 +253,9 @@ export function useRutaDia() {
   const scored = useMemo(
     () => rankingActivo(raw.map(c => {
       const slice = resolverAnalisisParaContrato(c, analisisFilas)
-      return puntuar(c, ahora, slice)
+      return puntuar(c, ahora, slice, convocatorias.get(c.id) ?? null)
     })),
-    [raw, analisisFilas, ahora],
+    [raw, analisisFilas, ahora, convocatorias],
   )
 
   const detalleOportunidad = detalleId != null

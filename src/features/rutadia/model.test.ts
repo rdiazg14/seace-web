@@ -460,3 +460,41 @@ describe('ubicación en el Diario según el cronograma', () => {
     expect(resumenDiario(scored, AHORA).consultasAbiertas).toBe(1)
   })
 })
+
+describe('puntaje por convocatorias anteriores desiertas', () => {
+  const resumen = (desiertasPrevias: number, previas = desiertasPrevias) => ({
+    numero: previas + 1,
+    total: previas + 1,
+    filas: [],
+    previas,
+    desiertasPrevias,
+    adjudicadasPrevias: 0,
+    sinResultadoPrevias: previas - desiertasPrevias,
+  })
+
+  it('suma 5 por una desierta y 10 por dos o más, sin análisis', () => {
+    const base = puntuar(mkContrato(), AHORA)
+    expect(base.score.convocatoria).toBe(0)
+    const una = puntuar(mkContrato(), AHORA, null, resumen(1))
+    const varias = puntuar(mkContrato(), AHORA, null, resumen(3))
+    expect(una.score.convocatoria).toBe(5)
+    expect(una.score.total).toBe(base.score.total + 5)
+    expect(varias.score.convocatoria).toBe(10)
+    expect(varias.score.total).toBe(base.score.total + 10)
+  })
+
+  it('una reconvocatoria sin desiertos previos no suma', () => {
+    const base = puntuar(mkContrato(), AHORA)
+    const sinDesiertos = puntuar(mkContrato(), AHORA, null, resumen(0, 2))
+    expect(sinDesiertos.score.total).toBe(base.score.total)
+  })
+
+  it('con análisis también suma, pero no rompe el techo de quien no califica', () => {
+    const califica: AnalisisScoreSlice = { encaje: { rubro: 'nucleo', califica: 'si' } }
+    const noCalifica: AnalisisScoreSlice = { encaje: { rubro: 'nucleo', califica: 'no' } }
+    const base = puntuar(mkContrato(), AHORA, califica)
+    const conDesiertas = puntuar(mkContrato(), AHORA, califica, resumen(2))
+    expect(conDesiertas.score.total).toBe(Math.min(100, base.score.total + 10))
+    expect(puntuar(mkContrato(), AHORA, noCalifica, resumen(2)).score.total).toBeLessThanOrEqual(35)
+  })
+})

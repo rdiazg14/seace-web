@@ -23,6 +23,7 @@
 import type { Contrato, Etapa } from '../../types'
 import type { Califica, CodigoVeredicto, Modalidad, RubroAnalisis, TonoCond } from '../../lib/analisis'
 import { addCalendarDays, cierraEn, cierraHoyInstante, dayOf, diffDays, limaDateISO, parseIso } from '../../lib/format'
+import { ptsConvocatoria, type ResumenConvocatorias } from './convocatorias'
 
 /**
  * Umbral de negocio (soles): por debajo el margen no paga el esfuerzo de postular.
@@ -69,6 +70,8 @@ export interface ScoreBreakdown {
   pago: number
   plazo: number
   riesgo: number
+  /** Convocatorias anteriores desiertas del mismo requerimiento. */
+  convocatoria: number
   total: number
 }
 
@@ -426,6 +429,7 @@ function ptsTono(tono: string | null | undefined): number {
 
 function emptyBreakdown(partial: Partial<ScoreBreakdown> & Pick<ScoreBreakdown, 'rubro' | 'vigencia' | 'urgencia' | 'senales' | 'total'>): ScoreBreakdown {
   return {
+    convocatoria: 0,
     califica: 0,
     margen: 0,
     modalidad: 0,
@@ -445,7 +449,9 @@ export function puntuar(
   c: Contrato,
   ahora: Date = new Date(),
   analisis: AnalisisScoreSlice | null = null,
+  convocatorias: ResumenConvocatorias | null = null,
 ): Oportunidad {
+  const convocatoria = ptsConvocatoria(convocatorias)
   const { nivel: nivelKw, overlay, altaIaReal } = clasificarNivel(c)
   const postulable = esPostulable(c, ahora)
   const porAbrir = esPorAbrir(c, ahora)
@@ -461,7 +467,7 @@ export function puntuar(
     const vigencia = enCurso ? 25 : c.estado === 'En Evaluación' ? 12 : 0
     const urgencia = vencidoVigente ? 0 : ptsUrgenciaHeuristica(c.fecha_fin_cotizacion, c.estado, ahora)
     const senales = ptsSenales(c, altaIaReal)
-    const total = Math.min(100, rubro + vigencia + urgencia + senales)
+    const total = Math.min(100, rubro + vigencia + urgencia + senales + convocatoria)
     const veredicto: 'recomendado' | 'evaluar' =
       enCurso && (nivelKw === 'nucleo' || nivelKw === 'adyacente') ? 'recomendado' : 'evaluar'
     return {
@@ -469,7 +475,7 @@ export function puntuar(
       nivel: nivelKw,
       overlay,
       altaIaReal,
-      score: emptyBreakdown({ rubro, vigencia, urgencia, senales, total }),
+      score: emptyBreakdown({ rubro, vigencia, urgencia, senales, convocatoria, total }),
       scoreFuente: 'heuristica',
       margenSoles: null,
       margenPct: null,
@@ -506,7 +512,8 @@ export function puntuar(
 
   let total = Math.min(
     100,
-    ptsRubro + ptsCal + ptsMargen + ptsMod + ptsPag + ptsPlazo + ptsRiesgo + vigencia + urgencia + senales,
+    ptsRubro + ptsCal + ptsMargen + ptsMod + ptsPag + ptsPlazo + ptsRiesgo + vigencia + urgencia + senales
+      + convocatoria,
   )
   // CRITERIOS §2: no calificar técnicamente es el ÚNICO filtro absoluto.
   // Techo 35: sigue en la lista y en filtros; solo no compite arriba.
@@ -553,6 +560,7 @@ export function puntuar(
       vigencia,
       urgencia,
       senales,
+      convocatoria,
       total,
     },
     scoreFuente: 'analisis',

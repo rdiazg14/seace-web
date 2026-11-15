@@ -103,6 +103,22 @@ export function agruparConvocatorias(filas: ConvocatoriaFila[]): Map<number, Res
   return out
 }
 
+/** Puntos por una convocatoria anterior desierta y por dos o más. */
+export const PTS_UNA_DESIERTA = 5
+export const PTS_VARIAS_DESIERTAS = 10
+
+/**
+ * Puntos del score por antecedentes desiertos: menos competencia esperada.
+ * Solo cuentan las convocatorias anteriores a este proceso; una adjudicada o
+ * sin resultado no suma.
+ */
+export function ptsConvocatoria(r: ResumenConvocatorias | null | undefined): number {
+  if (!r) return 0
+  if (r.desiertasPrevias >= 2) return PTS_VARIAS_DESIERTAS
+  if (r.desiertasPrevias === 1) return PTS_UNA_DESIERTA
+  return 0
+}
+
 /** 2 → «2.ª». */
 export function ordinalConvocatoria(n: number): string {
   return `${n}.ª`
