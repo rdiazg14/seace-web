@@ -119,6 +119,40 @@ export function ptsConvocatoria(r: ResumenConvocatorias | null | undefined): num
   return 0
 }
 
+/**
+ * Filtro del Diario. `reconvocadas`: 2.ª convocatoria o posterior.
+ * `desierto_previo`: además, alguna anterior quedó desierta.
+ */
+export type FiltroConvocatoria = 'todas' | 'reconvocadas' | 'desierto_previo'
+
+/** Un proceso sin historial es una primera convocatoria: solo pasa con `todas`. */
+export function cumpleFiltroConvocatoria(
+  r: ResumenConvocatorias | null | undefined,
+  filtro: FiltroConvocatoria,
+): boolean {
+  if (filtro === 'todas') return true
+  if (!r || r.numero < 2) return false
+  return filtro === 'reconvocadas' || r.desiertasPrevias > 0
+}
+
+export interface ConteoConvocatorias {
+  reconvocadas: number
+  desiertoPrevio: number
+}
+
+/** Cuántos procesos de una lista pasarían cada filtro. */
+export function contarConvocatorias(
+  resumenes: Iterable<ResumenConvocatorias | null | undefined>,
+): ConteoConvocatorias {
+  let reconvocadas = 0
+  let desiertoPrevio = 0
+  for (const r of resumenes) {
+    if (cumpleFiltroConvocatoria(r, 'reconvocadas')) reconvocadas += 1
+    if (cumpleFiltroConvocatoria(r, 'desierto_previo')) desiertoPrevio += 1
+  }
+  return { reconvocadas, desiertoPrevio }
+}
+
 /** 2 → «2.ª». */
 export function ordinalConvocatoria(n: number): string {
   return `${n}.ª`

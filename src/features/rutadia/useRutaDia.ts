@@ -21,7 +21,13 @@ import {
   restaurarContrato,
   type AnalisisFilaScore,
 } from './api'
-import { agruparConvocatorias, type ResumenConvocatorias } from './convocatorias'
+import {
+  agruparConvocatorias,
+  contarConvocatorias,
+  cumpleFiltroConvocatoria,
+  type FiltroConvocatoria,
+  type ResumenConvocatorias,
+} from './convocatorias'
 
 const SIN_CONVOCATORIAS: Map<number, ResumenConvocatorias> = new Map()
 
@@ -92,6 +98,7 @@ export function useRutaDia() {
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
   const [linea, setLinea] = useState<string | null>(null)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
+  const [convocatoria, setConvocatoria] = useState<FiltroConvocatoria>('todas')
   const [estadoOtras, setEstadoOtras] = useState<'por_abrir' | 'cerrados'>('cerrados')
   const [paginaPost, setPaginaPost] = useState(1)
   const [paginaOtras, setPaginaOtras] = useState(1)
@@ -262,10 +269,29 @@ export function useRutaDia() {
     ? scored.find(o => o.contrato.id === detalleId) ?? null
     : null
 
+  // Con el historial ausente o incompleto el filtro escondería procesos que sí
+  // son reconvocatorias: no se ofrece ni se aplica.
+  const filtroConvocatoria: FiltroConvocatoria = convocatoriasError ? 'todas' : convocatoria
+
   // Postulables: todos, ordenados por vencimiento (hoy > mañana > semana > …) y score.
-  const postulablesBase = useMemo(
+  const postulablesSinConvocatoria = useMemo(
     () => ordenarPostulables(aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable', ahora }), ahora),
     [scored, nivel, linea, cierre, ahora],
+  )
+  // Lo que mostraría cada opción con los demás filtros puestos, sin los ocultos.
+  const conteoConvocatorias = useMemo(
+    () => contarConvocatorias(
+      postulablesSinConvocatoria
+        .filter(o => !ocultos.has(o.contrato.id))
+        .map(o => convocatorias.get(o.contrato.id)),
+    ),
+    [postulablesSinConvocatoria, ocultos, convocatorias],
+  )
+  const postulablesBase = useMemo(
+    () => postulablesSinConvocatoria.filter(
+      o => cumpleFiltroConvocatoria(convocatorias.get(o.contrato.id), filtroConvocatoria),
+    ),
+    [postulablesSinConvocatoria, convocatorias, filtroConvocatoria],
   )
   const postulablesVisibles = useMemo(
     () => postulablesBase.filter(o => !ocultos.has(o.contrato.id)),
@@ -276,8 +302,9 @@ export function useRutaDia() {
     [postulablesBase, ocultos],
   )
   const otras = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras, ahora }),
-    [scored, nivel, linea, estadoOtras, ahora],
+    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras, ahora })
+      .filter(o => cumpleFiltroConvocatoria(convocatorias.get(o.contrato.id), filtroConvocatoria)),
+    [scored, nivel, linea, estadoOtras, ahora, convocatorias, filtroConvocatoria],
   )
 
   const totalPagPost = Math.max(1, Math.ceil(postulablesVisibles.length / tamPagina))
@@ -312,6 +339,9 @@ export function useRutaDia() {
     setLinea,
     cierre,
     setCierre,
+    convocatoria: filtroConvocatoria,
+    setConvocatoria,
+    conteoConvocatorias,
     estadoOtras,
     setEstadoOtras,
     tamPagina,

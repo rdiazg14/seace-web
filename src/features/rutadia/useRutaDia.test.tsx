@@ -481,4 +481,62 @@ describe('historial de convocatorias', () => {
     expect(result.current.convocatorias.size).toBe(0)
     expect(result.current.convocatoriasError).toBe(true)
   })
+
+  /** 4: primera convocatoria; 7: tras una adjudicada; 9: tras una desierta. */
+  const historialMixto = [
+    fila(7, 1, false, 'ADJUDICADO'), fila(7, 2, true, null),
+    fila(9, 1, false, 'DESIERTO'), fila(9, 2, true, null),
+  ]
+  const idsPostulables = (r: { current: ReturnType<typeof useRutaDia> }) =>
+    r.current.postulablesVisibles.map(o => o.contrato.id).sort((a, b) => a - b)
+
+  it('el filtro recorta la lista y los conteos dicen cuántos pasaría cada opción', async () => {
+    m.universo.mockResolvedValue([postulable(4), postulable(7), postulable(9)])
+    m.convocatorias.mockResolvedValue(historialMixto)
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.convocatoria).toBe('todas')
+    expect(idsPostulables(result)).toEqual([4, 7, 9])
+    expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 2, desiertoPrevio: 1 })
+
+    act(() => result.current.setConvocatoria('reconvocadas'))
+    expect(idsPostulables(result)).toEqual([7, 9])
+    act(() => result.current.setConvocatoria('desierto_previo'))
+    expect(idsPostulables(result)).toEqual([9])
+    // Los conteos no dependen de la opción elegida: siguen diciendo qué hay.
+    expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 2, desiertoPrevio: 1 })
+  })
+
+  it('los conteos respetan los otros filtros y no cuentan los ocultos', async () => {
+    m.universo.mockResolvedValue([postulable(7), { ...postulable(9), categoria_it: 'Hardware' }])
+    m.convocatorias.mockResolvedValue(historialMixto)
+    m.ocultos.mockResolvedValue(new Set([7]))
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 1, desiertoPrevio: 1 })
+    act(() => result.current.setLinea('Cloud/hosting'))
+    expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 0, desiertoPrevio: 0 })
+  })
+
+  it('también recorta «Otras etapas»', async () => {
+    const enEvaluacion = (id: number): Contrato => ({ ...postulable(id), estado: 'En Evaluación' })
+    m.universo.mockResolvedValue([enEvaluacion(4), enEvaluacion(9)])
+    m.convocatorias.mockResolvedValue(historialMixto)
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.otras.map(o => o.contrato.id).sort()).toEqual([4, 9])
+    act(() => result.current.setConvocatoria('desierto_previo'))
+    expect(result.current.otras.map(o => o.contrato.id)).toEqual([9])
+  })
+
+  it('sin historial fiable el filtro no se aplica: no esconde la lista', async () => {
+    m.universo.mockResolvedValue([postulable(4), postulable(9)])
+    m.convocatorias.mockResolvedValue({ filas: historialMixto, completo: false, total: null })
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.convocatoriasError).toBe(true)
+    act(() => result.current.setConvocatoria('desierto_previo'))
+    expect(result.current.convocatoria).toBe('todas')
+    expect(idsPostulables(result)).toEqual([4, 9])
+  })
 })

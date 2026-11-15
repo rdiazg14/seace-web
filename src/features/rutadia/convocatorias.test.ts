@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   agruparConvocatorias,
+  contarConvocatorias,
+  cumpleFiltroConvocatoria,
   etiquetaConvocatoria,
   ordinalConvocatoria,
   ptsConvocatoria,
@@ -115,5 +117,38 @@ describe('convocatorias del mismo requerimiento', () => {
     // Un desierto posterior a este proceso no es antecedente.
     expect(pts([null, 'DESIERTO'], 1)).toBe(0)
     expect(ptsConvocatoria(null)).toBe(0)
+  })
+
+  it('el filtro distingue reconvocadas de las que además tuvieron un desierto', () => {
+    const resumen = (resultados: (string | null)[], actual = resultados.length) =>
+      agruparConvocatorias(grupo(1, resultados, actual)).get(1)
+    const trasDesierto = resumen(['DESIERTO', null])
+    const trasAdjudicada = resumen(['ADJUDICADO', null])
+    const primera = resumen([null, 'DESIERTO'], 1)
+
+    for (const r of [trasDesierto, trasAdjudicada, primera, undefined, null]) {
+      expect(cumpleFiltroConvocatoria(r, 'todas')).toBe(true)
+    }
+    expect(cumpleFiltroConvocatoria(trasDesierto, 'reconvocadas')).toBe(true)
+    expect(cumpleFiltroConvocatoria(trasAdjudicada, 'reconvocadas')).toBe(true)
+    expect(cumpleFiltroConvocatoria(trasDesierto, 'desierto_previo')).toBe(true)
+    expect(cumpleFiltroConvocatoria(trasAdjudicada, 'desierto_previo')).toBe(false)
+    // La 1.ª convocatoria no es reconvocatoria aunque después haya otra desierta.
+    expect(cumpleFiltroConvocatoria(primera, 'reconvocadas')).toBe(false)
+    expect(cumpleFiltroConvocatoria(primera, 'desierto_previo')).toBe(false)
+    expect(cumpleFiltroConvocatoria(undefined, 'reconvocadas')).toBe(false)
+
+    expect(contarConvocatorias([trasDesierto, trasAdjudicada, primera, undefined]))
+      .toEqual({ reconvocadas: 2, desiertoPrevio: 1 })
+    expect(contarConvocatorias([])).toEqual({ reconvocadas: 0, desiertoPrevio: 0 })
+  })
+
+  it('toda fila que pasa el filtro lleva etiqueta en la tarjeta', () => {
+    const casos = [['DESIERTO', null], ['ADJUDICADO', null], [null, null, null]]
+    for (const resultados of casos) {
+      const r = agruparConvocatorias(grupo(1, resultados, resultados.length)).get(1)
+      expect(cumpleFiltroConvocatoria(r, 'reconvocadas')).toBe(true)
+      expect(etiquetaConvocatoria(r)).not.toBeNull()
+    }
   })
 })

@@ -91,6 +91,72 @@ describe('Diario: errores de carga recuperables', () => {
   })
 })
 
+describe('Diario: filtro de convocatorias', () => {
+  const contrato = (id: number, descripcion: string) => ({
+    id,
+    nro_contratacion: `N° ${id}`,
+    descripcion_contrato: '',
+    objeto: 'Servicio',
+    descripcion,
+    entidad: 'Entidad X',
+    estado: 'Vigente',
+    fecha_publica: '2026-09-25T10:00:00-05:00',
+    fecha_ini_cotizacion: '2026-09-20T08:00:00-05:00',
+    fecha_fin_cotizacion: '2099-01-01T00:00:00-05:00',
+    tipo_cotizacion: null,
+    cotizar: null,
+    categoria_it: null,
+    relevancia_ia: null,
+    pdf_hash: `h${id}`,
+  })
+  const convocatoria = (contratoId: number, numero: number, esActual: boolean, resultado: string | null) => ({
+    contrato_id: contratoId,
+    convocatoria_id: contratoId * 100 + numero,
+    numero,
+    total: 2,
+    es_actual: esActual,
+    nro_contratacion: null,
+    descripcion_contrato: null,
+    estado: 'Culminado',
+    fecha_publica: null,
+    fecha_ini_cotizacion: null,
+    fecha_fin_cotizacion: null,
+    resultado,
+    proveedor_ganador: null,
+    monto_adjudicado: null,
+    pdf_archivo_id: null,
+    pdf_storage_path: null,
+  })
+
+  it('los accesos muestran el conteo y recortan la lista; «Ver todas» la restaura', async () => {
+    m.universo.mockResolvedValue([
+      contrato(4, 'Servicio de software primera vez'),
+      contrato(9, 'Servicio de software reconvocado'),
+    ])
+    m.convocatorias.mockResolvedValue([convocatoria(9, 1, false, 'DESIERTO'), convocatoria(9, 2, true, null)])
+    renderUI(<RutaDia />)
+
+    const acceso = await screen.findByRole('button', { name: /Con desierto previo · 1/ })
+    expect(screen.getByRole('button', { name: /Reconvocados · 1/ })).toBeInTheDocument()
+    expect(screen.getByText(/primera vez/)).toBeInTheDocument()
+
+    await userEvent.click(acceso)
+    expect(screen.queryByText(/primera vez/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Servicio de software reconvocado/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ver todas' }))
+    expect(screen.getByText(/primera vez/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ver todas' })).not.toBeInTheDocument()
+  })
+
+  it('sin historial no se ofrece el filtro', async () => {
+    m.convocatorias.mockRejectedValue(new Error('permiso denegado'))
+    renderUI(<RutaDia />)
+    expect(await screen.findByText(/No se cargó el historial de convocatorias/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filtrar por convocatoria' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Diario: cabecera durante el arranque', () => {
   it('mientras llega el estado del pipeline no afirma "sin dato"; lo dice solo si de verdad no hay fila', async () => {
     let resolver!: (v: null) => void

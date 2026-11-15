@@ -34,6 +34,9 @@ export default function RutaDia() {
     setLinea,
     cierre,
     setCierre,
+    convocatoria,
+    setConvocatoria,
+    conteoConvocatorias,
     estadoOtras,
     setEstadoOtras,
     tamPagina,
@@ -160,6 +163,36 @@ export default function RutaDia() {
           </p>
         </div>
 
+        {/* Siempre a la vista: es el atajo a los procesos con menos competencia. */}
+        {!loading && !convocatoriasError && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por convocatoria">
+            <span className="text-[11px] text-slate-500">Convocatoria</span>
+            {([
+              ['reconvocadas', 'Reconvocados', conteoConvocatorias.reconvocadas, 'accent', '2.ª convocatoria o posterior del mismo requerimiento'],
+              ['desierto_previo', 'Con desierto previo', conteoConvocatorias.desiertoPrevio, 'ok', 'Alguna convocatoria anterior quedó desierta'],
+            ] as const).map(([id, label, n, tone, ayuda]) => (
+              <span key={id} title={ayuda}>
+                <Chip
+                  active={convocatoria === id}
+                  tone={tone}
+                  onClick={() => { setConvocatoria(x => x === id ? 'todas' : id); resetPaginas() }}
+                >
+                  ↻ {label} · {n.toLocaleString('es-PE')}
+                </Chip>
+              </span>
+            ))}
+            {convocatoria !== 'todas' && (
+              <button
+                type="button"
+                onClick={() => { setConvocatoria('todas'); resetPaginas() }}
+                className="text-[11px] text-slate-500 underline underline-offset-2 hover:text-teal-600"
+              >
+                Ver todas
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <button
             type="button"
@@ -236,7 +269,12 @@ export default function RutaDia() {
         {loading ? (
           <Skeleton className="h-40" />
         ) : postPaginados.length === 0 ? (
-          <EmptyState title="Sin postulables con esos filtros" hint="Los filtros navegan; no borran el resto." />
+          <EmptyState
+            title="Sin postulables con esos filtros"
+            hint={convocatoria === 'todas'
+              ? 'Los filtros navegan; no borran el resto.'
+              : 'Ningún proceso en curso es una reconvocatoria con esos filtros. Usa «Ver todas» para quitar el de convocatoria.'}
+          />
         ) : (
           <div className="space-y-2">
             {postPaginados.map((o, i) => (
@@ -333,6 +371,7 @@ export default function RutaDia() {
       <p className="pb-6 text-[11px] text-slate-400">
         Con análisis: rubro 28 + califica 18 + margen% 18 + modalidad/pago 8+8 + plazo/riesgo 5+5 + vigencia/urgencia 10+10;
         si no califica técnicamente → techo 35 (sigue en lista). Sin análisis: heurística rubro 50 + vigencia 25 + urgencia 15 + señales 10.
+        En ambos casos: +5 si la convocatoria anterior quedó desierta, +10 si fueron dos o más.
       </p>
 
       {detalleOportunidad && (
