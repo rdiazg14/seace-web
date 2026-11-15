@@ -514,7 +514,7 @@ describe('historial de convocatorias', () => {
     const { result } = renderHook(useRutaDia)
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 1, desiertoPrevio: 1 })
-    act(() => result.current.setLinea('Cloud/hosting'))
+    act(() => result.current.setTema({ linea: 'Cloud/hosting', subtema: null }))
     expect(result.current.conteoConvocatorias).toEqual({ reconvocadas: 0, desiertoPrevio: 0 })
   })
 
@@ -529,6 +529,19 @@ describe('historial de convocatorias', () => {
     expect(result.current.otras.map(o => o.contrato.id)).toEqual([9])
   })
 
+  it('el menú de temas cuenta lo que queda con el filtro de convocatoria puesto', async () => {
+    m.universo.mockResolvedValue([
+      { ...postulable(4), categoria_it: 'Hardware' },
+      { ...postulable(9), categoria_it: 'IA/analytics' },
+    ])
+    m.convocatorias.mockResolvedValue(historialMixto)
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.menuTemas.lineas.map(l => l.id).sort()).toEqual(['Hardware', 'IA/analytics'])
+    act(() => result.current.setConvocatoria('desierto_previo'))
+    expect(result.current.menuTemas.lineas.map(l => [l.id, l.n])).toEqual([['IA/analytics', 1]])
+  })
+
   it('sin historial fiable el filtro no se aplica: no esconde la lista', async () => {
     m.universo.mockResolvedValue([postulable(4), postulable(9)])
     m.convocatorias.mockResolvedValue({ filas: historialMixto, completo: false, total: null })
@@ -538,5 +551,59 @@ describe('historial de convocatorias', () => {
     act(() => result.current.setConvocatoria('desierto_previo'))
     expect(result.current.convocatoria).toBe('todas')
     expect(idsPostulables(result)).toEqual([4, 9])
+  })
+})
+
+describe('menú de temas', () => {
+  const de = (id: number, categoria_it: string | null, descripcion: string, extra: Partial<Contrato> = {}): Contrato =>
+    ({ ...postulable(id), categoria_it, descripcion, ...extra })
+  const ids = (lista: { contrato: { id: number } }[]) => lista.map(o => o.contrato.id).sort((a, b) => a - b)
+
+  it('se arma con los procesos en curso y filtra por línea y subtema', async () => {
+    m.universo.mockResolvedValue([
+      de(1, 'Hardware', 'Adquisición de impresora láser'),
+      de(2, 'Hardware', 'Adquisición de laptops'),
+      de(3, 'IA/analytics', 'Servicio de inteligencia artificial'),
+      // En evaluación: no es un proceso en curso, no forma el menú.
+      de(4, 'Cloud/hosting', 'Servicio de hosting', { estado: 'En Evaluación' }),
+    ])
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.tema).toEqual({ linea: null, subtema: null })
+    expect(result.current.menuTemas.total).toBe(3)
+    expect(result.current.menuTemas.lineas.map(l => [l.id, l.n])).toEqual([['Hardware', 2], ['IA/analytics', 1]])
+    expect(result.current.menuTemas.lineas[0].subtemas.map(s => [s.id, s.n]))
+      .toEqual([['impresoras', 1], ['computadoras', 1]])
+
+    act(() => result.current.setTema({ linea: 'Hardware', subtema: null }))
+    expect(ids(result.current.postulablesVisibles)).toEqual([1, 2])
+    act(() => result.current.setTema({ linea: 'Hardware', subtema: 'impresoras' }))
+    expect(ids(result.current.postulablesVisibles)).toEqual([1])
+    // El menú no se encoge al elegir: sigue ofreciendo las demás líneas.
+    expect(result.current.menuTemas.lineas.map(l => l.id)).toEqual(['Hardware', 'IA/analytics'])
+  })
+
+  it('no cuenta los ocultos y también recorta «Otras etapas»', async () => {
+    m.universo.mockResolvedValue([
+      de(1, 'Hardware', 'Adquisición de impresora'),
+      de(2, 'Hardware', 'Adquisición de impresora'),
+      de(4, 'Cloud/hosting', 'Servicio de hosting', { estado: 'En Evaluación' }),
+      de(5, 'Hardware', 'Adquisición de monitor', { estado: 'En Evaluación' }),
+    ])
+    m.ocultos.mockResolvedValue(new Set([2]))
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.menuTemas.lineas.map(l => [l.id, l.n])).toEqual([['Hardware', 1]])
+    expect(ids(result.current.otras)).toEqual([4, 5])
+    act(() => result.current.setTema({ linea: 'Hardware', subtema: null }))
+    expect(ids(result.current.otras)).toEqual([5])
+    expect(ids(result.current.ocultosList)).toEqual([2])
+  })
+
+  it('los procesos TI sin línea quedan en «Otros TI»', async () => {
+    m.universo.mockResolvedValue([de(1, null, 'Servicio con token de seguridad', { relevancia_ia: 'alta' })])
+    const { result } = renderHook(useRutaDia)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.menuTemas.lineas.map(l => [l.label, l.n])).toEqual([['Otros TI', 1]])
   })
 })

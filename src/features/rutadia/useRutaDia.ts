@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../lib/auth'
 import type { Contrato } from '../../types'
 import {
@@ -10,6 +10,7 @@ import {
   resumenDiario,
   type FiltroCierre,
   type NivelRubro,
+  type Oportunidad,
 } from './model'
 import {
   cargarEstadoPipeline,
@@ -28,6 +29,7 @@ import {
   type FiltroConvocatoria,
   type ResumenConvocatorias,
 } from './convocatorias'
+import { armarMenuTemas, cumpleTema, SIN_TEMA, temaDe, type SeleccionTema, type TemaContrato } from './temas'
 
 const SIN_CONVOCATORIAS: Map<number, ResumenConvocatorias> = new Map()
 
@@ -96,7 +98,7 @@ export function useRutaDia() {
   // recalculan aunque Diario quede abierto al cambiar de día o de ventana.
   const [ahora, setAhora] = useState(() => new Date())
   const [nivel, setNivel] = useState<NivelRubro | null>(null)
-  const [linea, setLinea] = useState<string | null>(null)
+  const [tema, setTema] = useState<SeleccionTema>(SIN_TEMA)
   const [cierre, setCierre] = useState<FiltroCierre>('todos')
   const [convocatoria, setConvocatoria] = useState<FiltroConvocatoria>('todas')
   const [estadoOtras, setEstadoOtras] = useState<'por_abrir' | 'cerrados'>('cerrados')
@@ -273,25 +275,44 @@ export function useRutaDia() {
   // son reconvocatorias: no se ofrece ni se aplica.
   const filtroConvocatoria: FiltroConvocatoria = convocatoriasError ? 'todas' : convocatoria
 
-  // Postulables: todos, ordenados por vencimiento (hoy > mañana > semana > …) y score.
-  const postulablesSinConvocatoria = useMemo(
-    () => ordenarPostulables(aplicarFiltros(scored, { nivel, linea, cierre, estado: 'postulable', ahora }), ahora),
-    [scored, nivel, linea, cierre, ahora],
+  // El tema depende solo del proceso: no se recalcula con el reloj.
+  const temas = useMemo(
+    () => new Map<number, TemaContrato>(raw.map(c => [c.id, temaDe(c)])),
+    [raw],
   )
-  // Lo que mostraría cada opción con los demás filtros puestos, sin los ocultos.
-  const conteoConvocatorias = useMemo(
-    () => contarConvocatorias(
-      postulablesSinConvocatoria
-        .filter(o => !ocultos.has(o.contrato.id))
-        .map(o => convocatorias.get(o.contrato.id)),
+  const pasaTema = useCallback((o: Oportunidad) => {
+    const t = temas.get(o.contrato.id)
+    return t ? cumpleTema(t, tema) : !tema.linea
+  }, [temas, tema])
+  const pasaConvocatoria = useCallback(
+    (o: Oportunidad) => cumpleFiltroConvocatoria(convocatorias.get(o.contrato.id), filtroConvocatoria),
+    [convocatorias, filtroConvocatoria],
+  )
+
+  // Postulables por nivel y cierre, ordenados por vencimiento (hoy > mañana > semana > …) y score.
+  const postulablesAmplios = useMemo(
+    () => ordenarPostulables(aplicarFiltros(scored, { nivel, cierre, estado: 'postulable', ahora }), ahora),
+    [scored, nivel, cierre, ahora],
+  )
+  const visiblesAmplios = useMemo(
+    () => postulablesAmplios.filter(o => !ocultos.has(o.contrato.id)),
+    [postulablesAmplios, ocultos],
+  )
+  // Cada filtro cuenta lo que mostraría con los demás filtros puestos, sin los ocultos.
+  const menuTemas = useMemo(
+    () => armarMenuTemas(
+      visiblesAmplios.filter(pasaConvocatoria).flatMap(o => temas.get(o.contrato.id) ?? []),
+      tema,
     ),
-    [postulablesSinConvocatoria, ocultos, convocatorias],
+    [visiblesAmplios, pasaConvocatoria, temas, tema],
+  )
+  const conteoConvocatorias = useMemo(
+    () => contarConvocatorias(visiblesAmplios.filter(pasaTema).map(o => convocatorias.get(o.contrato.id))),
+    [visiblesAmplios, pasaTema, convocatorias],
   )
   const postulablesBase = useMemo(
-    () => postulablesSinConvocatoria.filter(
-      o => cumpleFiltroConvocatoria(convocatorias.get(o.contrato.id), filtroConvocatoria),
-    ),
-    [postulablesSinConvocatoria, convocatorias, filtroConvocatoria],
+    () => postulablesAmplios.filter(o => pasaTema(o) && pasaConvocatoria(o)),
+    [postulablesAmplios, pasaTema, pasaConvocatoria],
   )
   const postulablesVisibles = useMemo(
     () => postulablesBase.filter(o => !ocultos.has(o.contrato.id)),
@@ -302,9 +323,9 @@ export function useRutaDia() {
     [postulablesBase, ocultos],
   )
   const otras = useMemo(
-    () => aplicarFiltros(scored, { nivel, linea, cierre: 'todos', estado: estadoOtras, ahora })
-      .filter(o => cumpleFiltroConvocatoria(convocatorias.get(o.contrato.id), filtroConvocatoria)),
-    [scored, nivel, linea, estadoOtras, ahora, convocatorias, filtroConvocatoria],
+    () => aplicarFiltros(scored, { nivel, cierre: 'todos', estado: estadoOtras, ahora })
+      .filter(o => pasaTema(o) && pasaConvocatoria(o)),
+    [scored, nivel, estadoOtras, ahora, pasaTema, pasaConvocatoria],
   )
 
   const totalPagPost = Math.max(1, Math.ceil(postulablesVisibles.length / tamPagina))
@@ -317,7 +338,8 @@ export function useRutaDia() {
 
   const kpis = useMemo(() => resumenDiario(scored, ahora), [scored, ahora])
 
-  const filtrosActivos = (nivel ? 1 : 0) + (linea ? 1 : 0) + (cierre !== 'todos' ? 1 : 0)
+  // Solo los del panel plegable; tema y convocatoria se ven siempre.
+  const filtrosActivos = (nivel ? 1 : 0) + (cierre !== 'todos' ? 1 : 0)
 
   return {
     loading,
@@ -335,8 +357,9 @@ export function useRutaDia() {
     convocatoriasError,
     nivel,
     setNivel,
-    linea,
-    setLinea,
+    tema,
+    setTema,
+    menuTemas,
     cierre,
     setCierre,
     convocatoria: filtroConvocatoria,

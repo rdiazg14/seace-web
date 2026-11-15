@@ -664,11 +664,11 @@ export type FiltroCierre = 'todos' | 'hoy' | 'semana' | 'mes'
  */
 export type FiltroEstado = 'postulable' | 'por_abrir' | 'cerrados'
 
+/** Nivel, cierre y etapa. El tema (línea y subtema) se filtra con `cumpleTema`. */
 export function aplicarFiltros(
   ranking: Oportunidad[],
   opts: {
     nivel: NivelRubro | null
-    linea: string | null
     cierre: FiltroCierre
     estado: FiltroEstado
     ahora?: Date
@@ -678,7 +678,6 @@ export function aplicarFiltros(
   const today = limaDateISO(ahora)
   return ranking.filter(o => {
     if (opts.nivel && o.nivel !== opts.nivel) return false
-    if (opts.linea && o.contrato.categoria_it !== opts.linea) return false
     const enCurso = esPostulable(o.contrato, ahora) || esEnPreparacion(o.contrato, ahora)
     const sinIniciar = esSinIniciar(o.contrato, ahora)
     if (opts.estado === 'postulable' && !enCurso) return false

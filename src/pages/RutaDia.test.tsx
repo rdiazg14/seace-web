@@ -2,7 +2,7 @@
 /** Diario con hook real y API simulada: los fallos de carga se ven como error
  *  recuperable en pantalla, sin recargar la página ni parecer lista vacía. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import RutaDia from './RutaDia'
 import { authState, fakeSession, perfilNormal, renderUI, setAuth } from '../test/dom'
@@ -154,6 +154,57 @@ describe('Diario: filtro de convocatorias', () => {
     renderUI(<RutaDia />)
     expect(await screen.findByText(/No se cargó el historial de convocatorias/)).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Filtrar por convocatoria' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Diario: menú de temas', () => {
+  const contrato = (id: number, descripcion: string, categoria_it: string) => ({
+    id,
+    nro_contratacion: 'N° ' + id,
+    descripcion_contrato: '',
+    objeto: 'Bien',
+    descripcion,
+    entidad: 'Entidad X',
+    estado: 'Vigente',
+    fecha_publica: '2026-09-25T10:00:00-05:00',
+    fecha_ini_cotizacion: '2026-09-20T08:00:00-05:00',
+    fecha_fin_cotizacion: '2099-01-01T00:00:00-05:00',
+    tipo_cotizacion: null,
+    cotizar: null,
+    categoria_it,
+    relevancia_ia: null,
+    pdf_hash: 'h' + id,
+  })
+
+  it('lista solo las líneas y subtemas con procesos, y un clic filtra', async () => {
+    m.universo.mockResolvedValue([
+      contrato(1, 'Adquisición de impresora láser para la sede', 'Hardware'),
+      contrato(2, 'Adquisición de laptops para la sede', 'Hardware'),
+      contrato(3, 'Servicio de internet dedicado', 'Redes/cableado'),
+    ])
+    renderUI(<RutaDia />)
+
+    const menu = await screen.findByRole('navigation', { name: 'Temas en curso' })
+    const boton = (name: RegExp) => within(menu).getByRole('button', { name })
+    expect(boton(/^Todos\s*3$/)).toHaveAttribute('aria-pressed', 'true')
+    expect(boton(/^Hardware\s*2$/)).toBeInTheDocument()
+    expect(boton(/^Redes\s*1$/)).toBeInTheDocument()
+    // Líneas sin procesos en curso no existen en el menú.
+    expect(within(menu).queryByRole('button', { name: /Cloud|Licencias|Ciberseguridad/ })).not.toBeInTheDocument()
+
+    await userEvent.click(boton(/^Impresoras y multifuncionales\s*1$/))
+    expect(screen.getByText(/impresora láser/)).toBeInTheDocument()
+    expect(screen.queryByText(/laptops para la sede/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/internet dedicado/)).not.toBeInTheDocument()
+    expect(boton(/^Impresoras y multifuncionales\s*1$/)).toHaveAttribute('aria-pressed', 'true')
+
+    // Otro toque sobre el subtema elegido vuelve a la línea completa.
+    await userEvent.click(boton(/^Impresoras y multifuncionales\s*1$/))
+    expect(screen.getByText(/laptops para la sede/)).toBeInTheDocument()
+    expect(screen.queryByText(/internet dedicado/)).not.toBeInTheDocument()
+
+    await userEvent.click(boton(/^Todos\s*3$/))
+    expect(screen.getByText(/internet dedicado/)).toBeInTheDocument()
   })
 })
 

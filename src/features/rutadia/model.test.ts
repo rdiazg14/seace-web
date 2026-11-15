@@ -263,14 +263,14 @@ describe('ranking y filtros', () => {
     expect(r.map((o) => o.contrato.id)).toEqual([2, 4, 1])
   })
 
-  it('aplicarFiltros por nivel, línea y estado', () => {
+  it('aplicarFiltros por nivel y estado', () => {
     const post = mkOp({ id: 1, categoria_it: 'IA/analytics' }, 80)
     const abrir = mkOp({ id: 2, categoria_it: 'Hardware', fecha_ini_cotizacion: '2026-10-01T00:00:00-05:00' }, 40)
     const cerrado = mkOp({ id: 3, fecha_fin_cotizacion: '2026-09-20T20:00:00-05:00' }, 10)
     const lista = [post, abrir, cerrado]
-    expect(aplicarFiltros(lista, { nivel: 'nucleo', linea: null, cierre: 'todos', estado: 'postulable', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([1])
-    expect(aplicarFiltros(lista, { nivel: null, linea: 'Hardware', cierre: 'todos', estado: 'por_abrir', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([2])
-    expect(aplicarFiltros(lista, { nivel: null, linea: null, cierre: 'todos', estado: 'cerrados', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([3])
+    expect(aplicarFiltros(lista, { nivel: 'nucleo', cierre: 'todos', estado: 'postulable', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([1])
+    expect(aplicarFiltros(lista, { nivel: null, cierre: 'todos', estado: 'por_abrir', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([2])
+    expect(aplicarFiltros(lista, { nivel: null, cierre: 'todos', estado: 'cerrados', ahora: AHORA }).map((o) => o.contrato.id)).toEqual([3])
   })
 
   it('aplicarFiltros por cierre: hoy usa instante, semana y mes usan día Lima', () => {
@@ -279,7 +279,7 @@ describe('ranking y filtros', () => {
     const mes = mkOp({ id: 3, fecha_fin_cotizacion: '2026-10-20T20:00:00-05:00' }, 60)
     const lejos = mkOp({ id: 4, fecha_fin_cotizacion: '2026-11-30T20:00:00-05:00' }, 50)
     const lista = [hoy, semana, mes, lejos]
-    const base = { nivel: null, linea: null, estado: 'postulable' as const, ahora: AHORA }
+    const base = { nivel: null, estado: 'postulable' as const, ahora: AHORA }
     expect(aplicarFiltros(lista, { ...base, cierre: 'hoy' }).map((o) => o.contrato.id)).toEqual([1])
     expect(aplicarFiltros(lista, { ...base, cierre: 'semana' }).map((o) => o.contrato.id)).toEqual([1, 2])
     expect(aplicarFiltros(lista, { ...base, cierre: 'mes' }).map((o) => o.contrato.id)).toEqual([1, 2, 3])
@@ -430,7 +430,7 @@ describe('ubicación en el Diario según el cronograma', () => {
     const lista = [consultasAbiertas, consultasCerradas, nadaAbierto, sinCronograma, mkContrato({ id: 15 })]
       .map((c) => puntuar(c, AHORA))
     const ids = (estado: 'postulable' | 'por_abrir' | 'cerrados') =>
-      aplicarFiltros(lista, { nivel: null, linea: null, cierre: 'todos', estado, ahora: AHORA })
+      aplicarFiltros(lista, { nivel: null, cierre: 'todos', estado, ahora: AHORA })
         .map((o) => o.contrato.id)
     expect(ids('postulable')).toEqual([11, 12, 15])
     expect(ids('por_abrir')).toEqual([13, 14])
